@@ -6,7 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-  <title>Roadtrip</title>
+  <title>Atlas HTML</title>
   <style>
     :root {
       --paper: #F4ECDC;
@@ -1875,13 +1875,13 @@
       <div class="sb-brand">
         <span class="sb-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 3L26 29L16 24L6 29L16 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 8V24" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
         <span class="sb-text">
-          <span class="sb-word">Roadtrip</span>
-          <span class="sb-sub">Dev OS</span>
+          <span class="sb-word">Atlas HTML</span>
+          <span class="sb-sub">Lokaler Projektatlas</span>
         </span>
       </div>
       <div class="segmented" id="navTabs"></div>
       <div class="panel sidebar-projects-panel">
-        <div class="panel-title"><h3>Projects</h3></div>
+        <div class="panel-title"><h3>Projekte</h3></div>
         <div class="list" id="sidebarProjects"></div>
       </div>
       <div class="sidebar-actions sidebar-actions-panel" aria-label="Datenaktionen">
@@ -1890,7 +1890,7 @@
           <button class="btn btn-soft" id="btnExport">Export</button>
           <label class="btn btn-soft" for="importJsonInput">Import</label>
           <button class="btn sidebar-action-secondary" id="btnSeed">Demo</button>
-          <button class="btn sidebar-action-secondary" id="btnBackupRaw">Raw Backup</button>
+          <button class="btn sidebar-action-secondary" id="btnBackupRaw">Rohdaten-Backup</button>
         </div>
       </div>
       <input id="importJsonInput" type="file" accept="application/json" class="hidden" />
@@ -1934,7 +1934,7 @@
       const FEATURE_STATUS_LABELS = {
         idea: 'Idee',
         planned: 'Geplant',
-        'selected-for-sprint': 'Für Sprint ausgewählt',
+        'selected-for-sprint': 'Für Arbeitsphase / Sprint ausgewählt',
         'in-progress': 'In Arbeit',
         blocked: 'Blockiert',
         deferred: 'Zurückgestellt',
@@ -1945,8 +1945,8 @@
         obsolete: 'Veraltet'
       };
       const FEATURE_POOL_LABELS = {
-        planned: 'Geplante Features',
-        implemented: 'Umgesetzte Features'
+        planned: 'Geplante Projektbausteine',
+        implemented: 'Abgeschlossene / entwickelte Projektbausteine'
       };
       const LEGACY_STATUS_TO_PLANNED = {
         idee: 'idea',
@@ -2593,10 +2593,10 @@
       function renderNav() {
         const wrap = $('navTabs');
         wrap.innerHTML = '';
-        const labels = {overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'};
+        const labels = {overview:'Karte',database:'Projektbausteine',momentum:'Momentum',project:'Projekt',notes:'Notizen',learning:'Projektjournal',import:'Import & Analyse',settings:'Einstellungen'};
         const groups = [
-          { label: 'Reise', views: ['overview', 'project', 'momentum'] },
-          { label: 'Werkstatt', views: ['database', 'notes', 'learning'] },
+          { label: 'Orientierung', views: ['overview', 'project', 'momentum'] },
+          { label: 'Arbeitsraum', views: ['database', 'notes', 'learning'] },
           { label: 'Werkzeuge', views: ['import', 'settings'] }
         ];
         groups.forEach(group => {
@@ -2626,7 +2626,7 @@
         const implementedFeatures = visibleFeatures.filter(isImplementedFeature);
         const stats = {
           Projekte: S.projects.filter(p => p.status !== 'archiviert').length,
-          Features: visibleFeatures.length,
+          Projektbausteine: visibleFeatures.length,
           Geplant: plannedFeatures.length,
           Umgesetzt: implementedFeatures.length,
           Offene: plannedFeatures.filter(f => !['deferred'].includes(f.status)).length,
@@ -2675,7 +2675,7 @@
         renderProjectSelects();
         if ($('themeSelect')) $('themeSelect').value = normalizeConfigTheme();
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({overview:'Karte',database:'Database',momentum:'Momentum',project:'Project',notes:'Notes',learning:'Learning',import:'Import',settings:'Settings'})[ui.view];
+        $('viewTitle').textContent = ({overview:'Karte',database:'Projektbausteine',momentum:'Momentum',project:'Projekt',notes:'Notizen',learning:'Projektjournal',import:'Import & Analyse',settings:'Einstellungen'})[ui.view];
         wireDynamicView();
         wireDrawer();
       }
@@ -2914,7 +2914,7 @@
         qq('[data-import-dup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreImportedFeatureDuplicate(btn.dataset.importDupIgnore || '')));
         qq('[data-import-dup-fill]').forEach(btn => btn.addEventListener('click', () => fillImportedFeatureDuplicateEmptyFields(btn.dataset.importDupFill || '')));
         qq('[data-import-dup-adopt]').forEach(btn => btn.addEventListener('click', () => adoptImportedFeatureDuplicateCandidate(btn.dataset.importDupAdopt || '')));
-        qq('[data-import-dup-create]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupCreate || '', 'Als neues planned Feature angelegt')));
+        qq('[data-import-dup-create]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupCreate || '', 'Als neuer geplanter Projektbaustein angelegt')));
         qq('[data-import-dup-later]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupLater || '', 'Später prüfen')));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
         qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
@@ -3411,7 +3411,7 @@
                 <div class="eyebrow">Sprint-Aktionen</div>
                 <strong>Start / Ende direkt aus dem Projektkopf steuern</strong>
                 <div class="mini" style="margin-top:4px;">Prompt wird automatisch kopiert. Füge die Antwort aus dem Hauptchat direkt hier ein.</div>
-                <div class="mini" style="margin-top:4px;">Sprintstart fragt kleine Feature-Database-Mitnahmen automatisch mit an.</div>
+                <div class="mini" style="margin-top:4px;">Sprintstart fragt kleine Projektbaustein-Database-Mitnahmen automatisch mit an.</div>
               </div>
               <div style="display:flex;flex-direction:column;gap:8px;min-width:260px;max-width:100%;flex:0 1 340px;">
                 <div class="field" style="margin-bottom:0;width:100%;">
@@ -3469,7 +3469,7 @@
               <summary>Optional · Hauptchat vor Sprintstart abgleichen</summary>
               <div class="field" style="margin-top:8px;">
                 <label for="nextSprintMainchatPromptOutput">Next-Sprint-/Hauptchat-Handoff-Prompt</label>
-                <div class="mini" style="margin-bottom:6px;">Optionaler Abgleich: geplante Features, neue Kandidaten und nächsten Sprint vom project-main Hauptchat als JSON-Handoff zurückholen.</div>
+                <div class="mini" style="margin-bottom:6px;">Optionaler Abgleich: geplante Projektbausteine, neue Kandidaten und nächsten Sprint vom project-main Hauptchat als JSON-Handoff zurückholen.</div>
                 <textarea id="nextSprintMainchatPromptOutput" style="min-height:150px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt ...">${escapeHtml(nextSprintMainchatHandoff.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
                   <button class="btn btn-secondary" type="button" id="btnBuildNextSprintMainchatPrompt" ${isArchivedProject ? 'disabled' : ''}>Hauptchat-Abgleich-Prompt erzeugen</button>
@@ -3493,7 +3493,7 @@
       function renderPlannedFeatureBulkBackfillSection() {
         const projectId = (!ui.showAllProjects && ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY) ? ui.activeProjectId : '';
         if (!projectId) {
-          return '<div class="notice notice-info" style="margin:12px 0;">Planned Feature Backfill / Hauptchat-Abgleich: Bitte ein konkretes Projekt wählen.</div>';
+          return '<div class="notice notice-info" style="margin:12px 0;">Planned Projektbaustein Backfill / Hauptchat-Abgleich: Bitte ein konkretes Projekt wählen.</div>';
         }
         const state = getPlannedFeatureBulkBackfillState(projectId);
         const totalSparse = getSparsePlannedFeaturesForProject(projectId).length;
@@ -3502,11 +3502,11 @@
         const project = S.projects.find(p => p.id === projectId) || {};
         return `
           <details class="panel" style="padding:12px;margin:12px 0;" open>
-            <summary><strong>Planned Feature Backfill / Hauptchat-Abgleich</strong></summary>
+            <summary><strong>Planned Projektbaustein Backfill / Hauptchat-Abgleich</strong></summary>
             <div class="mini" style="margin:8px 0;">
-              Erzeugt einen Hauptchat-Abgleich-Prompt für dünn befüllte planned Features im Projekt „${escapeHtml(project.title || projectId)}“.
-              Sparse Features: ${totalSparse}; im Prompt: ${selectedCount}.
-              ${totalSparse > promptLimit ? `Hinweis: ${totalSparse - promptLimit} weitere sparse Features sind wegen des Prompt-Limits nicht enthalten.` : ''}
+              Erzeugt einen Hauptchat-Abgleich-Prompt für dünn befüllte geplante Projektbausteine im Projekt „${escapeHtml(project.title || projectId)}“.
+              Sparse Projektbausteine: ${totalSparse}; im Prompt: ${selectedCount}.
+              ${totalSparse > promptLimit ? `Hinweis: ${totalSparse - promptLimit} weitere sparse Projektbausteine sind wegen des Prompt-Limits nicht enthalten.` : ''}
             </div>
             <div class="field">
               <label for="plannedFeatureBulkPromptOutput">Backfill-Prompt</label>
@@ -3537,13 +3537,13 @@
         return `
           ${renderContextBanner()}
           <div class="panel-title">
-            <h3>Feature Database</h3>
+            <h3>Projektbaustein-Datenbank</h3>
             <label class="pill" style="cursor:pointer;">
               <input id="toggleAllProjects" type="checkbox" ${ui.showAllProjects?'checked':''} />
               Alle Projekte
             </label>
           </div>
-          <div class="db-toolbar" aria-label="Feature-Datenbank Filter">
+          <div class="db-toolbar" aria-label="Filter der Projektbaustein-Datenbank">
             <div class="field">
               <label for="filterSearch">Suche</label>
               <input id="filterSearch" type="text" value="${escapeAttr(ui.filters.search)}" placeholder="Titel, Beschreibung, Projekt ..." />
@@ -3660,7 +3660,7 @@
         if (!chat || !chat.id) return '';
         const project = S.projects.find(p => p.id === chat.projectId) || {};
         const prompt = [
-          'Du bist mein Learning-Reviewer für einen abgeschlossenen Roadtrip-Chat/Sprint.',
+          'Du bist mein Learning-Reviewer für einen abgeschlossenen Atlas HTML-Chat/Sprint.',
           '',
           '## Projektkontext',
           `- Projekttitel: ${project.title || '—'}`,
@@ -3923,12 +3923,12 @@
         const analyzedAt = String(project.lastAnalyzedAt || '').trim();
         return `
           <div class="notice notice-warn" style="margin:8px 0 12px;">
-            <div><strong>Seit dem letzten Sprintabschluss wurde noch keine neue Codeanalyse durchgeführt.</strong></div>
+            <div><strong>Seit dem letzten Sprintabschluss wurde noch keine neue Materialanalyse / Gegenstands-Abgleich durchgeführt.</strong></div>
             <div class="mini" style="margin-top:6px;">
-              Letzter Sprintabschluss: ${escapeHtml(sprintDoneAt ? formatDateTime(sprintDoneAt) : '—')} · Letzte Codeanalyse: ${escapeHtml(analyzedAt ? formatDateTime(analyzedAt) : '—')}
+              Letzter Sprintabschluss: ${escapeHtml(sprintDoneAt ? formatDateTime(sprintDoneAt) : '—')} · Letzte Materialanalyse / Gegenstands-Abgleich: ${escapeHtml(analyzedAt ? formatDateTime(analyzedAt) : '—')}
             </div>
             <div class="stack-row" style="margin-top:8px;">
-              <button class="btn btn-secondary" data-open-code-analysis-import="${escapeAttr(project.id || '')}">Codeanalyse im Import öffnen</button>
+              <button class="btn btn-secondary" data-open-code-analysis-import="${escapeAttr(project.id || '')}">Materialanalyse / Gegenstands-Abgleich im Import öffnen</button>
             </div>
           </div>
         `;
@@ -4224,8 +4224,8 @@
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         const noteLines = getRelevantUnprocessedNotes(projectId, 5);
         return [
-          'Ziel: Diesen alten Sprintchat in Roadtrip überführen.',
-          'Bitte fasse den aktuellen Stand so zusammen, dass Roadtrip daraus einen Sprintchat-Eintrag und bei Bedarf einen project-main-Kontext erzeugen kann.',
+          'Ziel: Diesen alten Sprintchat in Atlas HTML überführen.',
+          'Bitte fasse den aktuellen Stand so zusammen, dass Atlas HTML daraus einen Sprintchat-Eintrag und bei Bedarf einen project-main-Kontext erzeugen kann.',
           '',
           'Antworte ausschließlich als gültiges JSON.',
           'Kein Markdown, keine Code-Fences, kein Erklärtext vor oder nach dem JSON.',
@@ -4272,14 +4272,14 @@
           '- Nutze für priority bevorzugt: ' + PRIORITIES.join(', '),
           '- proposedFeatures[*].status wenn gesetzt nur "planned".',
           '',
-          'Projektkontext aus Roadtrip:',
+          'Projektkontext aus Atlas HTML:',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
           `- Nächster Schritt: ${project.nextStep || '—'}`,
           '',
-          'Relevante offene Features:',
-          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          'Relevante offene Projektbausteine:',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Projektbausteine hinterlegt.']),
           ...(noteLines.length ? ['', 'Relevante unverarbeitete Notizen:', ...noteLines] : [])
         ].join('\n');
       }
@@ -4291,7 +4291,7 @@
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         return [
           'Erstelle einen kompakten Sprint-Abschlussbericht als JSON.',
-          'Dieser Prompt wird am Ende eines Sprintchats verwendet. Der Sprintchat soll nach dem Import in Roadtrip als abgeschlossen gelten.',
+          'Dieser Prompt wird am Ende eines Sprintchats verwendet. Der Sprintchat soll nach dem Import in Atlas HTML als abgeschlossen gelten.',
           'Antworte AUSSCHLIESSLICH mit gültigem JSON.',
           'Kein Markdown, keine Code-Fences, kein Erklärtext vor oder nach dem JSON.',
           '',
@@ -4332,8 +4332,8 @@
           '- Nutze für category bevorzugt: ' + FEATURE_CATEGORIES.join(', '),
           '- Nutze für priority bevorzugt: ' + PRIORITIES.join(', '),
           '- proposedFeatures[*].status wenn gesetzt nur "planned".',
-          '- Erzeuge aus Sprintberichten keine Features mit Status "implemented".',
-          '- Neue Feature-Vorschläge aus dem Sprintbericht gehören in den geplanten Pool.',
+          '- Erzeuge aus Sprintberichten keine Projektbausteine mit Status "implemented".',
+          '- Neue Projektbaustein-Vorschläge aus dem Sprintbericht gehören in den geplanten Pool.',
           '',
           'Projektkontext:',
           `- Projekttitel: ${project.title || '—'}`,
@@ -4349,8 +4349,8 @@
           `- Next Step: ${sourceChat.nextStep || '—'}`,
           sourceChat.rawReportText ? `- Vorhandener Raw Report:\n${sourceChat.rawReportText}` : '- Vorhandener Raw Report: —',
           '',
-          'Relevante offene Features:',
-          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.'])
+          'Relevante offene Projektbausteine:',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Projektbausteine hinterlegt.'])
         ].join('\n');
       }
 
@@ -4463,7 +4463,7 @@
           return alert('Ungültiges JSON: ' + (err && err.message ? err.message : 'Parsing fehlgeschlagen.'));
         }
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return alert('Ungültiges JSON: Erwartet wird ein JSON-Objekt.');
-        if (String(parsed.type || '').trim() !== 'roadtrip-sprint-start') return alert('Dieses JSON ist kein Roadtrip-Sprintstart-JSON.');
+        if (String(parsed.type || '').trim() !== 'roadtrip-sprint-start') return alert('Dieses JSON ist kein gültiges Sprintstart-JSON für Atlas HTML (Legacy-Typ: roadtrip-sprint-start).');
 
         const missing = [];
         const chatTitle = String(parsed.chatTitle || '').trim();
@@ -4545,11 +4545,11 @@
           importFeatureDatabaseCarryover(projectId, parsed, featureCarryoverReport, {
             now,
             sourceType: 'sprintstart-feature-carryover',
-            sourceContextNote: 'Quelle: Sprintstart-Feature-Mitnahme.',
-            duplicateSourceLabel: 'Sprintstart-Feature-Mitnahme'
+            sourceContextNote: 'Quelle: Sprintstart-Projektbaustein-Mitnahme.',
+            duplicateSourceLabel: 'Sprintstart-Projektbaustein-Mitnahme'
           });
           featureCarryoverReport.recommendedSprintSummary = formatNextSprintRecommendedSprintSummary({}, parsed);
-          featureCarryoverSummary = formatNextSprintMainchatHandoffImportSummary(featureCarryoverReport, 'Sprintstart-Feature-Mitnahme');
+          featureCarryoverSummary = formatNextSprintMainchatHandoffImportSummary(featureCarryoverReport, 'Sprintstart-Projektbaustein-Mitnahme');
         }
 
         const st = getChatWorkflowState(projectId);
@@ -4593,7 +4593,7 @@
           sourceChat.rawReportText ? `- Raw Report:\n${sourceChat.rawReportText}` : '- Raw Report: —',
           '',
           '## Offene Punkte',
-          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          ...(featureLines.length ? featureLines : ['- Keine offenen Projektbausteine hinterlegt.']),
           ...(noteLines.length ? ['', '## Relevante unverarbeitete Notizen', ...noteLines] : []),
           '',
           '## Was jetzt im Hauptchat geklärt/entschieden werden soll',
@@ -4628,16 +4628,16 @@
         const noteLines = getRelevantUnprocessedNotes(projectId, 5);
         return [
           'Bitte arbeite mit mir den zentralen Hauptchat für dieses Projekt auf.',
-          'Roadtrip hat intern einen Hauptchat-Kontext vorbereitet oder bereitet ihn gerade vor.',
-          'Eine externe ChatGPT-/Claude-Hauptchat-URL kann Roadtrip nicht automatisch erzeugen.',
-          'Wenn noch keine URL vorhanden ist, erstelle den Hauptchat extern und trage die URL danach in Roadtrip ein.',
+          'Atlas HTML hat intern einen Hauptchat-Kontext vorbereitet oder bereitet ihn gerade vor.',
+          'Eine externe ChatGPT-/Claude-Hauptchat-URL kann Atlas HTML nicht automatisch erzeugen.',
+          'Wenn noch keine URL vorhanden ist, erstelle den Hauptchat extern und trage die URL danach in Atlas HTML ein.',
           '',
           '## Projektkontext',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${effectiveCurrentFocus}`,
           `- Nächster Schritt: ${effectiveNextStep}`,
-          `- Hauptchat-URL: ${project.mainChatUrl || (mainChat && mainChat.url) || 'OFFEN – nach Erstellung in Roadtrip eintragen'}`,
+          `- Hauptchat-URL: ${project.mainChatUrl || (mainChat && mainChat.url) || 'OFFEN – nach Erstellung in Atlas HTML eintragen'}`,
           '',
           '## Aktueller Stand aus Ausgangschat',
           `- Ausgangschat: ${sourceChat.title || '—'} (${sourceChat.type || '—'})`,
@@ -4647,10 +4647,10 @@
           `- Next Step im Ausgangschat: ${effectiveNextStep}`,
           sourceChat.rawReportText ? `- Raw Report:\n${sourceChat.rawReportText}` : '- Raw Report: —',
           ...(handoffQuestions.length ? ['', '## Offene Fragen aus Sprint-Bericht', ...handoffQuestions] : []),
-          ...(handoffProposedFeatures.length ? ['', '## Vorgeschlagene Features aus Sprint-Bericht', ...handoffProposedFeatures] : []),
+          ...(handoffProposedFeatures.length ? ['', '## Vorgeschlagene Projektbausteine aus Sprint-Bericht', ...handoffProposedFeatures] : []),
           '',
-          '## Wichtige offene Punkte (Features)',
-          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
+          '## Wichtige offene Punkte (Projektbausteine)',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Projektbausteine hinterlegt.']),
           ...(noteLines.length ? ['', '## Wichtige unverarbeitete Notizen', ...noteLines] : []),
           '',
           '## Auftrag',
@@ -4668,7 +4668,7 @@
         const featureLines = getRelevantFeatureTitles(projectId, 8);
         const noteLines = getRelevantUnprocessedNotes(projectId, 6);
         return [
-          'Analysiere den folgenden alten Legacy-Chat als Quelle für einen neuen Roadtrip-Hauptchat.',
+          'Analysiere den folgenden alten Legacy-Chat als Quelle für einen neuen Atlas HTML-Hauptchat.',
           '',
           'Wichtig:',
           'Erzeuge keinen Sprintabschluss.',
@@ -4676,14 +4676,14 @@
           'Versuche nicht, alte unsaubere Chatphasen künstlich in Sprintstruktur zu pressen.',
           '',
           'Ziel:',
-          'Erzeuge einen sauberen project-main Hauptchat-Kontext, mit dem das Projekt künftig im normalen Roadtrip-Zyklus weitergeführt werden kann.',
+          'Erzeuge einen sauberen project-main Hauptchat-Kontext, mit dem das Projekt künftig im normalen Atlas HTML-Zyklus weitergeführt werden kann.',
           '',
           'Der alte Chat kann enthalten:',
           '- Hauptchat-Anteile',
           '- Sprintchat-Anteile',
           '- Debugging',
           '- Analyse',
-          '- Feature-Ideen',
+          '- Projektbaustein-Ideen',
           '- Architekturentscheidungen',
           '- offene Fragen',
           '- erledigte Arbeit',
@@ -4694,10 +4694,10 @@
           'Extrahiere:',
           '- Was ist das Projekt?',
           '- Was wurde im alten Chat zuletzt gemacht?',
-          '- Welche Funktionen, Features oder Architekturentscheidungen existieren bereits?',
+          '- Welche Funktionen, Projektbausteine oder Architekturentscheidungen existieren bereits?',
           '- Welche nächsten Schritte wurden erwähnt?',
           '- Welche offenen Fragen gibt es?',
-          '- Welche geplanten Features lassen sich ableiten?',
+          '- Welche geplanten Projektbausteine lassen sich ableiten?',
           '- Welche Risiken oder technischen Schulden sind sichtbar?',
           '- Was muss ein neuer Hauptchat unbedingt wissen?',
           '- Was wäre der nächste sinnvolle Sprint?',
@@ -4709,7 +4709,7 @@
           'Ein vollständiger Prompt, den ich in einen neuen project-main Hauptchat kopieren kann.',
           'Der Prompt soll den Projektkontext, aktuellen Stand, Fokus, nächste Schritte, bekannte erledigte Arbeit, offene Fragen und sinnvolle nächste Sprint-Richtung enthalten.',
           '',
-          'TEIL 2: ROADTRIP-IMPORT-JSON',
+          'TEIL 2: ATLAS-HTML-IMPORT-JSON',
           '',
           'Gib ausschließlich gültiges JSON in folgendem Schema aus:',
           '',
@@ -4741,21 +4741,21 @@
           '- type muss "roadtrip-mainchat-bootstrap" sein.',
           '- chatType muss "project-main" sein.',
           '- status soll "aktiv" sein.',
-          '- proposedFeatures nur für geplante Features verwenden.',
-          '- Keine implemented Features erzeugen.',
+          '- proposedFeatures nur für geplante Projektbausteine verwenden.',
+          '- Keine abgeschlossenen / entwickelten Projektbausteine erzeugen.',
           '- Keine historischen Sprintchats erzeugen.',
           '- Unklare Punkte lieber in openQuestions oder legacySourceNotes schreiben.',
           '- Antworte in TEIL 2 mit gültigem JSON ohne Markdown-Kommentare innerhalb des JSON.',
           '',
-          'Roadtrip-Projektkontext als Orientierung:',
+          'Atlas-HTML-Projektkontext als Orientierung:',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
           `- Nächster Schritt: ${project.nextStep || '—'}`,
           '',
-          'Bestehende offene/geplante Features in Roadtrip:',
-          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
-          ...(noteLines.length ? ['', 'Relevante unverarbeitete Notizen in Roadtrip:', ...noteLines] : []),
+          'Bestehende offene/geplante Projektbausteine in Atlas HTML:',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Projektbausteine hinterlegt.']),
+          ...(noteLines.length ? ['', 'Relevante unverarbeitete Notizen in Atlas HTML:', ...noteLines] : []),
           '',
           'Füge unterhalb dieses Prompts den alten Legacy-Chat ein.'
         ].join('\n');
@@ -4954,14 +4954,14 @@
           '',
           '## Hauptchat-Kontext',
           `- Hauptchat: ${mainChat.title || '—'}`,
-          `- URL: ${mainChat.url || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
+          `- URL: ${mainChat.url || project.mainChatUrl || 'OFFEN – in Atlas HTML nachtragen'}`,
           `- Hauptchat-Summary: ${mainChat.summary || '—'}`,
           `- Hauptchat-Next Step: ${mainChat.nextStep || '—'}`,
           '',
           cleanGoal ? `## Sprint-Ziel / Anliegen\n${cleanGoal}\n` : '## Sprint-Ziel / Anliegen\n- Kein separates Sprint-Ziel eingetragen.\n',
-          '## Relevante offene Features',
-          ...(featureLines.length ? featureLines : ['- Keine offenen Features hinterlegt.']),
-          ...(selectedFeatureDetails.length ? ['', '## Details zu ausgewählten planned Features', ...selectedFeatureDetails] : []),
+          '## Relevante offene Projektbausteine',
+          ...(featureLines.length ? featureLines : ['- Keine offenen Projektbausteine hinterlegt.']),
+          ...(selectedFeatureDetails.length ? ['', '## Details zu ausgewählten geplanten Projektbausteinen', ...selectedFeatureDetails] : []),
           '',
           '## Auftrag',
           '- Formuliere einen klaren Sprint-Startplan.',
@@ -5115,40 +5115,40 @@
         const relevantOpenNotes = getRelevantUnprocessedNotes(projectId, 8);
         const handoffLines = getRecentNextSprintHandoffContextLines(projectId, 4);
         return [
-          'Bitte analysiere den project-main Hauptchat-Kontext und erstelle ein Roadtrip-Next-Sprint-Handoff.',
+          'Bitte analysiere den project-main Hauptchat-Kontext und erstelle ein Next-Sprint-Handoff für Atlas HTML.',
           '',
           'Wichtig: Gib ausschließlich gültiges JSON zurück. Keine Markdown-Codefences, keine Einleitung, keine Kommentare.',
           `Der JSON-type muss exakt "${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}" sein.`,
-          'Verwende in featureUpdates nur bestehende Feature-IDs aus Roadtrip.',
-          'Aktualisiere keine implemented Features. Neue Ideen gehören ausschließlich nach proposedFeatures.',
+          'Verwende in featureUpdates nur bestehende IDs geplanter Projektbausteine aus Atlas HTML.',
+          'Aktualisiere keine abgeschlossenen / entwickelten Projektbausteine. Neue Ideen gehören ausschließlich nach proposedFeatures.',
           ...getFeatureFlowPromptContractLines(),
           '',
-          '## Projektkontext (aus Roadtrip)',
+          '## Projektkontext (aus Atlas HTML)',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
           `- Nächster Projektschritt: ${project.nextStep || '—'}`,
           `- project-main Chat-Titel: ${(mainChat && mainChat.title) || 'OFFEN – kein interner Hauptchat-Kontext gefunden'}`,
-          `- project-main Chat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
+          `- project-main Chat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Atlas HTML nachtragen'}`,
           `- project-main Summary: ${(mainChat && mainChat.summary) || 'OFFEN – bitte aus dem Hauptchat-Kontext ableiten'}`,
           `- project-main Next Step: ${(mainChat && mainChat.nextStep) || 'OFFEN – bitte aus dem Hauptchat-Kontext ableiten'}`,
           '',
-          '## Ausgewählte planned Features mit Detailfeldern',
-          ...(selectedFeatures.length ? selectedFeatures.map(f => formatPlannedFeatureDetailsForPrompt(f, { maxTextChars: 320, maxCriteria: 8 })) : ['- Keine planned Features explizit als „Für Sprint ausgewählt“ markiert.']),
+          '## Ausgewählte geplante Projektbausteine mit Detailfeldern',
+          ...(selectedFeatures.length ? selectedFeatures.map(f => formatPlannedFeatureDetailsForPrompt(f, { maxTextChars: 320, maxCriteria: 8 })) : ['- Keine geplanten Projektbausteine explizit als „Für Arbeitsphase / Sprint ausgewählt“ markiert.']),
           '',
-          '## Relevante offene planned Features (kompakt)',
-          ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine weiteren offenen planned Features gefunden.']),
+          '## Relevante offene geplante Projektbausteine (kompakt)',
+          ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine weiteren offenen geplanten Projektbausteine gefunden.']),
           '',
           '## Relevante offene Notes',
           ...(relevantOpenNotes.length ? relevantOpenNotes : ['- Keine offenen Notes gefunden.']),
           '',
           '## Letzte Sprint-/Handoff-Zusammenfassungen',
-          ...(handoffLines.length ? handoffLines : ['- Keine verwertbaren Sprint-/Handoff-Zusammenfassungen in Roadtrip gefunden.']),
+          ...(handoffLines.length ? handoffLines : ['- Keine verwertbaren Sprint-/Handoff-Zusammenfassungen in Atlas HTML gefunden.']),
           '',
           '## Aufgabe an den Hauptchat',
           '- Was wurde seit dem letzten Sprint im Hauptchat besprochen?',
-          '- Welche bestehenden planned Features sollen aktualisiert werden?',
-          '- Welche neuen planned Feature-Kandidaten fehlen in Roadtrip?',
+          '- Welche bestehenden geplanten Projektbausteine sollen aktualisiert werden?',
+          '- Welche neuen Kandidaten für geplante Projektbausteine fehlen in Atlas HTML?',
           '- Was ist der sinnvollste nächste Sprint?',
           '- Welche offenen Fragen sollen festgehalten werden?',
           '- Welche Ideen sind bewusst zurückzustellen?',
@@ -5183,25 +5183,25 @@
         const cleanGoal = String(sprintGoal || '').trim() || 'Kein separates Sprintziel hinterlegt.';
         const executionMode = getSprintExecutionMode(projectId);
         const prompt = [
-          'Bitte bereite für Roadtrip den Sprint-Start vor.',
+          'Bitte bereite für Atlas HTML den Sprint-Start vor.',
           'Wichtig: Erzeuge NICHT nur eine allgemeine Antwort, sondern genau zwei Codeblöcke im geforderten Format.',
           'Aktualisiere deinen Hauptchat-Kontext aktiv anhand der folgenden Projektdaten, bevor du den Sprintstart planst.',
           '',
-          '## Projektkontext (aus Roadtrip)',
+          '## Projektkontext (aus Atlas HTML)',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
           `- Nächster Projektschritt: ${project.nextStep || '—'}`,
           `- Hauptchat-Titel: ${(mainChat && mainChat.title) || '—'}`,
-          `- Hauptchat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Roadtrip nachtragen'}`,
+          `- Hauptchat-URL: ${(mainChat && mainChat.url) || project.mainChatUrl || 'OFFEN – in Atlas HTML nachtragen'}`,
           '',
-          '## Ausgewählte Features für den nächsten Sprint',
+          '## Ausgewählte Projektbausteine für den nächsten Sprint',
           ...(selectedFeatures.length ? selectedFeatures.map(f => isPlannedFeature(f)
             ? formatPlannedFeatureDetailsForPrompt(f, { maxTextChars: 280, maxCriteria: 6 })
-            : `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine Features explizit als "Für Sprint ausgewählt" markiert.']),
+            : `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine Projektbausteine explizit als "Für Arbeitsphase / Sprint ausgewählt" markiert.']),
           '',
-          '## Relevante offene Features',
-          ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine weiteren relevanten offenen Features gefunden.']),
+          '## Relevante offene Projektbausteine',
+          ...(relevantOpenFeatures.length ? relevantOpenFeatures.map(f => `- [${f.id}] ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- Keine weiteren relevanten offenen Projektbausteine gefunden.']),
           '',
           '## Relevante offene Notizen',
           ...(relevantOpenNotes.length ? relevantOpenNotes : ['- Keine offenen Notizen vorhanden.']),
@@ -5213,10 +5213,10 @@
             ? '- Hinweis: Agentenmodus -> schneller Ablauf, größere zusammenhängende Patches sind ok.'
             : (selectedWorkMode === CHAT_WORK_MODES.learning ? '- Hinweis: Lernmodus -> Schritt-für-Schritt mit nachvollziehbaren Änderungen/Befehlen.' : '- Hinweis: Arbeitsmodus nicht vorgegeben.'),
           '',
-          '## Kleine Feature-Database-Mitnahme (kompakter Zusatz)',
-          '- Prüfe nur kleine neue Feature-Infos seit der letzten Sprintplanung.',
+          '## Kleine Projektbaustein-Datenbank-Mitnahme (kompakter Zusatz)',
+          '- Prüfe nur kleine neue Projektbaustein-Infos seit der letzten Sprintplanung.',
           '- Kein vollständiger Hauptchat-Audit, kein Migration Bundle, keine Roadmap-Neusortierung.',
-          '- Keine implemented Features aktualisieren; featureUpdates nur für bestehende planned Feature-IDs aus Roadtrip.',
+          '- Keine abgeschlossenen / entwickelten Projektbausteine aktualisieren; featureUpdates nur für bestehende IDs geplanter Projektbausteine aus Atlas HTML.',
           '- Kleine neue Ideen optional als proposedFeatures zurückgeben; Status nur idea/planned, niemals implemented.',
           '- Kleine Ergänzungen optional in featureUpdates zurückgeben: description, purpose, workflowContext, acceptanceCriteria, sourceContext, featureFlow, openQuestions, priority, status.',
           ...getFeatureFlowPromptContractLines(),
@@ -5225,9 +5225,9 @@
           '## Deine Ausgabe muss exakt so strukturiert sein',
           executionMode === SPRINT_EXECUTION_MODES.direct ? '- Direktmodus: Codeblock 1 darf einen normalen Umsetzungs-Sprintchat vorbereiten.' : '- Codex-Steuerungsmodus: Codeblock 1 muss den unten stehenden Hinweis am Ende des Sprintchat-Startprompts enthalten.',
           '1) Codeblock: fertiger Sprintchat-Startprompt (zum Kopieren in einen neuen Sprintchat).',
-          '2) Codeblock: gültiges JSON für Roadtrip, damit der Sprintchat als aktiv angelegt/aktualisiert werden kann.',
+          '2) Codeblock: gültiges JSON für Atlas HTML, damit der Sprintchat als aktiv angelegt/aktualisiert werden kann.',
           '',
-          'JSON-Mindeststruktur (Pflichtfelder plus optionale Feature-Mitnahme):',
+          'JSON-Mindeststruktur (Pflichtfelder plus optionale Projektbaustein-Mitnahme):',
           '{',
           '  "type": "roadtrip-sprint-start",',
           '  "chatTitle": "...",',
@@ -5259,7 +5259,7 @@
 
       function getFeatureFlowPromptContractLines() {
         return [
-          '- featureFlow ist optional für eine Mermaid-Flowchart-Skizze des Features.',
+          '- featureFlow ist optional für eine Mermaid-Flowchart-Skizze des Projektbausteine.',
           '- Wenn featureFlow gefüllt wird, muss der Wert ausschließlich gültiger Mermaid-Code sein.',
           '- Keine Markdown-Codefences, kein erklärender Fließtext, kein Pseudocode, kein JSON im featureFlow-Feld.',
           '- Bevorzugtes featureFlow-Format: Start mit flowchart TD; kurze, sprechende Knoten und einfache gerichtete Kanten nutzen.',
@@ -5294,7 +5294,7 @@
         const includeHeading = options.includeHeading !== false;
         const includeBasics = options.includeBasics !== false;
 
-        if (includeHeading) lines.push('Feature:');
+        if (includeHeading) lines.push('Projektbaustein:');
         if (includeBasics) {
           lines.push(`- ID: ${feature.id || '—'}`);
           lines.push(`- Titel: ${feature.title || 'Ohne Titel'}`);
@@ -5305,7 +5305,7 @@
         }
         addLine('Zweck', feature.purpose);
         addLine('Workflow-Kontext', feature.workflowContext);
-        addBlock('Feature-Flow / Mermaid', feature.featureFlow);
+        addBlock('Projektbaustein-Flow / Mermaid', feature.featureFlow);
 
         const criteria = normalizeAcceptanceCriteria(feature.acceptanceCriteria).slice(0, Math.max(0, maxCriteria));
         if (criteria.length) {
@@ -5337,7 +5337,7 @@
         const planned = features.filter(f => isPlannedFeature(f) && f.status !== 'selected-for-sprint').slice(0, 6);
         const recentNotes = notes.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 6);
         return [
-          '### Ausgewählte / sprintnahe Features',
+          '### Ausgewählte / sprintnahe Projektbausteine',
           ...(selected.length ? selected.map(f => `- ${f.title || 'Ohne Titel'} (${getFeatureStatusLabel(f.status)} · ${f.priority || 'prio-offen'})`) : ['- —']),
           '',
           '### Weitere geplante Richtung',
@@ -5355,13 +5355,13 @@
         const handoffLines = getRecentDesignBriefingHandoffs(projectId, 5);
         const directionLines = getClaudeDesignDirectionLines(projectId);
         return [
-          '# Analyseauftrag: Claude-Design-Nutzung für gezielte Roadtrip-Design-Überarbeitungen',
+          '# Analyseauftrag: Claude-Design-Nutzung für gezielte Atlas HTML-Design-Überarbeitungen',
           '',
-          'Du bist Strategie-Reviewer für einen bestehenden App-/Design-Workflow. Analysiere bisherige Claude-Design-Arbeiten, Outputs und Handoffs. Leite daraus ein kompaktes Strategie-/Ergebnisdokument und ein späteres Roadtrip-Modulkonzept ab.',
+          'Du bist Strategie-Reviewer für einen bestehenden App-/Design-Workflow. Analysiere bisherige Claude-Design-Arbeiten, Outputs und Handoffs. Leite daraus ein kompaktes Strategie-/Ergebnisdokument und ein späteres Atlas HTML-Modulkonzept ab.',
           '',
           'Wichtig: In diesem Auftrag sollst du keine App-Dateien bearbeiten und kein Redesign umsetzen. Es geht nur um Analyse, Strategie, Modulkonzept und ein anschlussfähiges Handoff-Format für spätere Codex-Sprints.',
           '',
-          '## Projektkontext aus Roadtrip',
+          '## Projektkontext aus Atlas HTML',
           `- Projekttitel: ${project.title || '—'}`,
           `- Projektsummary: ${project.summary || '—'}`,
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
@@ -5373,7 +5373,7 @@
           '## Letzte relevante Sprint-/Chat-Handoffs',
           ...(handoffLines.length ? handoffLines : ['- —']),
           '',
-          '## Aktuelle Feature-/Notiz-/Momentum-Richtung',
+          '## Aktuelle Projektbaustein-/Notiz-/Momentum-Richtung',
           ...directionLines,
           '',
           '## Ziel der Analyse',
@@ -5387,20 +5387,20 @@
           '- Wie kann Claude Design effizienter und token-schonender genutzt werden?',
           '- Welche Inputs braucht Claude Design wirklich?',
           '- Welche Inputs sind unnötig oder zu teuer?',
-          '- Wie sollte ein Roadtrip-Modul aussehen, das gezielte Design-Überarbeitungen vorbereitet?',
+          '- Wie sollte ein Atlas HTML-Modul aussehen, das gezielte Design-Überarbeitungen vorbereitet?',
           '- Wie sollte ein Claude-Design-Prompt aufgebaut sein, wenn ein GitHub-ZIP-Export einer App mitgeschickt wird?',
           '- Wie sollte ein Claude-Design-Handoff aussehen, damit Codex später gezielt weiterarbeiten kann?',
           '- Welche Design-Änderungen sollten als auswählbare Vorschläge gespeichert werden?',
           '- Welche Design-Ideen sollten für später geparkt werden?',
           '',
           '## Späterer Zielworkflow, den dein Konzept berücksichtigen soll',
-          '1. Roadtrip nimmt Projektkontext.',
-          '2. Roadtrip fasst letzte Sprints / Handoffs / App-Richtung zusammen.',
-          '3. Roadtrip erzeugt Analyseprompt für GPT/Claude.',
+          '1. Atlas HTML nimmt Projektkontext.',
+          '2. Atlas HTML fasst letzte Sprints / Handoffs / App-Richtung zusammen.',
+          '3. Atlas HTML erzeugt Analyseprompt für GPT/Claude.',
           '4. Ergebnis kann später als JSON-Handoff importiert werden.',
           '5. Design-Überarbeitungen werden vorgeschlagen.',
           '6. Nutzer wählt Überarbeitungen aus oder speichert sie für später.',
-          '7. Roadtrip erzeugt daraus gezielten Claude-Design-Prompt.',
+          '7. Atlas HTML erzeugt daraus gezielten Claude-Design-Prompt.',
           '8. Nutzer schickt Prompt + GitHub-ZIP an Claude Design.',
           '9. Claude Design liefert ein Handoff für Codex.',
           '10. Nächster Codex-Sprint setzt gewählte Designänderungen um.',
@@ -5408,7 +5408,7 @@
           '## Gewünschtes Ergebnisformat',
           '1. Kurzfazit: bisherige Claude-Design-Nutzung und wichtigste Learnings.',
           '2. Strategie: effiziente, token-schonende Nutzung mit minimal nötigen Inputs.',
-          '3. Roadtrip-Modulkonzept: Felder, Aktionen, Prompt-Ausgaben, Nicht-Ziele.',
+          '3. Atlas HTML-Modulkonzept: Felder, Aktionen, Prompt-Ausgaben, Nicht-Ziele.',
           '4. Claude-Design-Prompt-Template für den Fall „Prompt + GitHub-ZIP-Export“.',
           '5. Claude-Design-Handoff-Format für Codex: klare Abschnitte, konkrete Dateien/Komponenten, Akzeptanzkriterien, Risiken.',
           '6. Vorschlagslogik: auswählbare Designänderungen vs. später geparkte Ideen.',
@@ -5515,7 +5515,7 @@
             `  - Erstellt: ${note.createdAt || '—'}`
           ].join('\n');
         }).filter(Boolean);
-        return ['# Roadtrip · Unmatched Notes', '', '## Offen', '', rows.join('\n') || '- [ ] —'].join('\n');
+        return ['# Atlas HTML · Unmatched Notes', '', '## Offen', '', rows.join('\n') || '- [ ] —'].join('\n');
       }
 
       function saveCurrentUnmatchedNotes() {
@@ -5640,7 +5640,7 @@
           '- Ordne Notizen den Projekten zu.',
           '- Keine erfundenen Projekte.',
           '- Wenn Zuordnung unsicher ist: confidence "niedrig" oder unmatchedNotes.',
-          '- proposedFeatures nur für echte Feature-Ideen, nicht für allgemeine Notizen.',
+          '- proposedFeatures nur für echte Projektbaustein-Ideen, nicht für allgemeine Notizen.',
           '- Prüfe, ob frühere Unmatched Notes jetzt sinnvoll Projekten zugeordnet werden können.',
           '- Wenn ja: in projectUpdates[*].notes oder proposedFeatures ausgeben.',
           '- Wenn weiterhin unklar: erneut in unmatchedNotes ausgeben.',
@@ -5698,7 +5698,7 @@
                   ${update.focusUpdate ? `<div class="mini" style="margin-top:6px;"><strong>Fokus:</strong> ${escapeHtml(update.focusUpdate)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-focus="${update._idx}" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusDone ? '✓ Fokus übernommen' : 'Fokus übernehmen'}</button><button class="btn" data-multi-ignore="focus|${update._idx}|-1" ${update._focusDone || update._focusIgnored ? 'disabled' : ''}>${update._focusIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._focusDone ? '<span class="pill pill-success">übernommen</span>' : ''}${update._focusIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
                   ${update.nextStep ? `<div class="mini" style="margin-top:6px;"><strong>Nächster Schritt:</strong> ${escapeHtml(update.nextStep)}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-next-step="${update._idx}" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepDone ? '✓ Next Step übernommen' : 'Next Step übernehmen'}</button><button class="btn" data-multi-ignore="next-step|${update._idx}|-1" ${update._nextStepDone || update._nextStepIgnored ? 'disabled' : ''}>${update._nextStepIgnored ? '✓ Ignoriert' : 'Ignorieren'}</button>${update._nextStepDone ? '<span class="pill pill-success">übernommen</span>' : ''}${update._nextStepIgnored ? '<span class="pill">ignoriert</span>' : ''}</div>` : ''}
                   ${update.notes && update.notes.length ? `<div style="margin-top:8px;"><strong>Notes</strong><div class="list" style="margin-top:6px;">${update.notes.map(note => `<div class="item" style="${note._done || note._ignored ? 'opacity:.72;' : ''}"><div>${escapeHtml(note.text || '')}</div><div class="mini">${escapeHtml(note.type || 'note')} · ${escapeHtml(note.confidence || 'mittel')}</div><div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-note="${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._done ? '✓ Note übernommen' : 'Als Note übernehmen'}</button><button class="btn" data-multi-ignore="note|${update._idx}|${note._idx}" ${note._done || note._ignored ? 'disabled' : ''}>${note._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${note._done ? '<span class="pill pill-success">übernommen</span>' : ''}${note._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
-                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Proposed Features</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item" style="${feature._done || feature._ignored ? 'opacity:.72;' : ''}"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._done ? '✓ Feature übernommen' : 'Als Feature übernehmen'}</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${feature._done ? '<span class="pill pill-success">übernommen</span>' : ''}${feature._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
+                  ${update.proposedFeatures && update.proposedFeatures.length ? `<div style="margin-top:8px;"><strong>Vorgeschlagene Projektbausteine</strong><div class="list" style="margin-top:6px;">${update.proposedFeatures.map(feature => `<div class="item" style="${feature._done || feature._ignored ? 'opacity:.72;' : ''}"><div><strong>${escapeHtml(feature.title || 'Ohne Titel')}</strong></div><div class="mini">${escapeHtml(feature.category || 'Sonstiges')} · ${escapeHtml(feature.priority || 'mittel')} · ${escapeHtml(feature.status || 'idea')}</div>${feature.description ? `<div class="mini">${escapeHtml(shorten(feature.description, 220))}</div>` : ''}<div class="stack-row" style="margin-top:4px;"><button class="btn" data-multi-accept-feature="${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._done ? '✓ Projektbaustein übernommen' : 'Als Projektbaustein übernehmen'}</button><button class="btn" data-multi-ignore="feature|${update._idx}|${feature._idx}" ${feature._done || feature._ignored ? 'disabled' : ''}>${feature._ignored ? '✓ Ignoriert' : 'Ignorieren'}</button>${feature._done ? '<span class="pill pill-success">übernommen</span>' : ''}${feature._ignored ? '<span class="pill">ignoriert</span>' : ''}</div></div>`).join('')}</div></div>` : ''}
                 </div>`).join('')}</div>` : '<div class="mini">Noch keine geladenen Vorschläge.</div>'}
               ${unmatched.length ? `<details open><summary>Unmatched Notes (${unmatched.length})</summary><div class="stack-row" style="margin:8px 0;"><button class="btn" id="btnSaveCurrentUnmatchedNotes">Alle unmatched speichern</button></div><div class="list" style="margin-top:8px;">${unmatched.map(item => `<div class="item"><div>${escapeHtml(item.text || '')}</div><div class="mini">${escapeHtml(item.reason || 'ohne Grund')}</div></div>`).join('')}</div></details>` : ''}
             </div>
@@ -5770,7 +5770,7 @@
                 <strong>${escapeHtml(project.title || 'Ohne Titel')}</strong>
                 <div class="mini">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')}</div>
               </div>
-              <span class="pill">${plannedFeatures.length} Features</span>
+              <span class="pill">${plannedFeatures.length} Projektbausteine</span>
             </div>
             <div class="mini">${openNotes.length} offene Notizen · aktualisiert ${escapeHtml(formatDateTime(getProjectUpdatedAt(project)))}</div>
           </button>`;
@@ -5799,7 +5799,7 @@
               <div class="mini">${escapeHtml(project.status || 'aktiv')} · ${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(formatDateTime(getProjectUpdatedAt(project)))}</div>
             </div>
             <div class="stack-row" style="gap:6px;">
-              <span class="pill">${plannedFeatures.length} Features</span>
+              <span class="pill">${plannedFeatures.length} Projektbausteine</span>
               <span class="pill">${openNotes.length} Notizen</span>
             </div>
           </div>
@@ -5898,7 +5898,7 @@
                 <div class="mini">${escapeHtml(project.type || 'Sonstiges')} · ${escapeHtml(project.status || 'aktiv')} · Zuletzt aktualisiert: ${escapeHtml(formatDateTime(updatedAt))}</div>
               </div>
               <div class="stack-row" style="gap:6px;">
-                <span class="pill">Planned Features: ${plannedFeatures.length}</span>
+                <span class="pill">Geplante Projektbausteine: ${plannedFeatures.length}</span>
                 <span class="pill">Offene Notizen: ${openNotes.length}</span>
               </div>
             </div>
@@ -5955,12 +5955,12 @@
           <div class="panel-title">
             <div>
               <h3>Momentum Dashboard</h3>
-              <div class="mini">Projektübergreifender Überblick über Fokus, nächsten Schritt, offene Features und offene Notizen.</div>
+              <div class="mini">Projektübergreifender Überblick über Fokus, nächsten Schritt, offene Projektbausteine und offene Notizen.</div>
             </div>
             <select id="momentumSortSelect" style="max-width:260px;">
               <option value="updated" ${ui.momentumSort === 'updated' ? 'selected' : ''}>Zuletzt aktualisiert</option>
               <option value="openNotes" ${ui.momentumSort === 'openNotes' ? 'selected' : ''}>Viele offene Notizen</option>
-              <option value="plannedFeatures" ${ui.momentumSort === 'plannedFeatures' ? 'selected' : ''}>Viele geplante Features</option>
+              <option value="plannedFeatures" ${ui.momentumSort === 'plannedFeatures' ? 'selected' : ''}>Viele geplante Projektbausteine</option>
             </select>
           </div>
           ${renderMultiProjectNotesImportSection({
@@ -6079,11 +6079,11 @@
           return rows.length ? rows.join('\n') : '- —';
         };
         return [
-          '# Roadtrip Momentum Review',
+          '# Atlas HTML Momentum Review',
           '',
-          'Du arbeitest mit einem Roadtrip-Projektkontext.',
+          'Du arbeitest mit einem Atlas-HTML-Projektkontext.',
           'Der Quellcode allein reicht für diese Entscheidung nicht aus.',
-          'Nutze deshalb die folgenden Roadtrip-Daten als wichtigste Arbeitsgrundlage: Projektkontext, geplante Features und offene Notizen.',
+          'Nutze deshalb die folgenden Atlas HTML-Daten als wichtigste Arbeitsgrundlage: Projektkontext, geplante Projektbausteine und offene Notizen.',
           '',
           '## Projektkontext',
           `- Projekt: ${project.title || '—'}`,
@@ -6091,17 +6091,17 @@
           `- Aktueller Fokus: ${project.currentFocus || '—'}`,
           `- Aktueller nächster Schritt: ${project.nextStep || '—'}`,
           '',
-          '## Geplante Features',
-          '### Gerade aktive Features',
+          '## Geplante Projektbausteine',
+          '### Gerade aktive Projektbausteine',
           featureLines(activeFeaturesForPrompt, 8),
           '',
           '### Top-Kandidaten',
           featureLines(candidateFeaturesForPrompt, 10),
           '',
-          '### Blockierte Features',
+          '### Blockierte Projektbausteine',
           featureLines(blockedFeaturesForPrompt, 6),
           '',
-          '### Zurückgestellte Features',
+          '### Zurückgestellte Projektbausteine',
           featureLines(deferredFeaturesForPrompt, 5),
           '',
           '## Offene Notizen zur Verarbeitung',
@@ -6110,14 +6110,14 @@
           '## Aufgabe',
           '1. Werte die offenen Notizen aus.',
           '   - Entscheide, welche Notizen für den aktuellen Projektfokus relevant sind.',
-          '   - Erkenne, ob eine Notiz eher Kontext, Problem, Feature-Idee, offene Frage, Entscheidung oder veralteter Rest ist.',
+          '   - Erkenne, ob eine Notiz eher Kontext, Problem, Projektbaustein-Idee, offene Frage, Entscheidung oder veralteter Rest ist.',
           '   - Extrahiere verwertbare Hinweise für Fokus und nächsten Schritt.',
-          '   - Erfinde keine neuen Features, aber benenne klar, wenn aus einer Notiz ein Feature-Kandidat entstehen sollte.',
+          '   - Erfinde keine neuen Projektbausteine, aber benenne klar, wenn aus einer Notiz ein Projektbaustein-Kandidat entstehen sollte.',
           '',
-          '2. Vergleiche die Notizen mit den geplanten Features.',
-          '   - Welche Features werden durch Notizen bestätigt?',
-          '   - Welche Features wirken jetzt wichtiger?',
-          '   - Welche Features können warten?',
+          '2. Vergleiche die Notizen mit den geplanten Projektbausteine.',
+          '   - Welche Projektbausteine werden durch Notizen bestätigt?',
+          '   - Welche Projektbausteine wirken jetzt wichtiger?',
+          '   - Welche Projektbausteine können warten?',
           '   - Gibt es Widersprüche oder offene Klärungen?',
           '',
           '3. Leite daraus den nächsten konkreten Projektschritt ab.',
@@ -6134,18 +6134,18 @@
           '### 2. Verarbeitung der offenen Notizen',
           'Liste die relevanten Notizen mit ID und Entscheidung:',
           '- nutzen für Fokus',
-          '- in Feature-Kandidat überführen',
+          '- in Projektbaustein-Kandidat überführen',
           '- als offene Frage behalten',
           '- später prüfen',
           '- vermutlich veraltet / ignorieren',
           '',
-          '### 3. Feature-Einschätzung',
-          'Welche 1–3 Features sind jetzt am wichtigsten und warum?',
+          '### 3. Projektbaustein-Einschätzung',
+          'Welche 1–3 Projektbausteine sind jetzt am wichtigsten und warum?',
           '',
           '### 4. Empfohlene nächste Aktionen',
           'Höchstens 1–2 Aktionen.',
           '',
-          '### 5. Roadtrip-JSON',
+          '### 5. Atlas HTML-JSON',
           'Gib am Ende genau ein JSON-Objekt aus.',
           'Mindestens diese Felder:',
           '{',
@@ -6153,7 +6153,7 @@
           '  "nextStep": "..."',
           '}',
           '',
-          'currentFocus und nextStep sollen kurz und konkret sein, damit sie direkt in Roadtrip-Feldern funktionieren.',
+          'currentFocus und nextStep sollen kurz und konkret sein, damit sie direkt in Atlas HTML-Feldern funktionieren.',
           '',
           'Optional darfst du zusätzlich diese Felder ergänzen:',
           '{',
@@ -6180,7 +6180,7 @@
         // ── Empty state ──────────────────────────────────────────────────────
         if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
           return `
-            <div class="panel-title"><h3>Project View</h3></div>
+            <div class="panel-title"><h3>Projektarbeitsraum</h3></div>
             <div class="notice">Kein Projekt ausgewählt. Wähle links ein Projekt oder lege ein neues an.</div>
             <div class="stack-row" style="margin-top:10px;">
               <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
@@ -6292,7 +6292,7 @@
             <div class="status-card">
               <div class="eyebrow">Status</div>
               <div class="status-card-value"><span class="pill">${escapeHtml(p.status || '—')}</span></div>
-              <div class="meta">${projectFeatures.length} Features · aktualisiert ${escapeHtml(formatDateTime(updatedAt))}</div>
+              <div class="meta">${projectFeatures.length} Projektbausteine · aktualisiert ${escapeHtml(formatDateTime(updatedAt))}</div>
             </div>
             <div class="status-card">
               <div class="eyebrow">Aktueller Fokus</div>
@@ -6408,14 +6408,14 @@
                       Arbeitsmodus wird oben im Sprint-Aktionen-Dock gewählt.
                     </div>
                     <div class="field">
-                      <label>Features mit Status „Für Sprint ausgewählt“</label>
+                      <label>Projektbausteine mit Status „Für Arbeitsphase / Sprint ausgewählt“</label>
                       <div class="notice" style="margin:0;">
                         ${getSelectedSprintFeatureIds(p.id).length
                           ? getSelectedSprintFeatureIds(p.id).map(fid => {
                             const feature = projectFeatures.find(f => f.id === fid);
                             return `• ${escapeHtml(feature ? feature.title : fid)}`;
                           }).join('<br/>')
-                          : 'Keine Features mit Status „Für Sprint ausgewählt“.'
+                          : 'Keine Projektbausteine mit Status „Für Arbeitsphase / Sprint ausgewählt“.'
                         }
                       </div>
                     </div>
@@ -6479,7 +6479,7 @@
                 </div>
                 <div class="field" style="margin-top:8px;">
                   <label for="mainChatBootstrapJsonInput">roadtrip-mainchat-bootstrap JSON importieren</label>
-                  <div class="mini" style="margin-bottom:6px;">Importiert nur einen project-main Hauptchat-Kontext und geplante Features; es werden keine historischen Sprintchats erzeugt.</div>
+                  <div class="mini" style="margin-bottom:6px;">Importiert nur einen project-main Hauptchat-Kontext und geplante Projektbausteine; es werden keine historischen Sprintchats erzeugt.</div>
                   <textarea id="mainChatBootstrapJsonInput" style="min-height:140px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-mainchat-bootstrap","chatTitle":"...","chatType":"project-main"}'>${escapeHtml(chatWorkflow.mainChatBootstrapJson || '')}</textarea>
                   <div class="stack-row" style="margin-top:6px;">
                     <button class="btn btn-secondary" id="btnImportMainChatBootstrapJson" ${isArchivedProject ? 'disabled' : ''}>Hauptchat-Bootstrap importieren</button>
@@ -6514,25 +6514,25 @@
             </div>
             <div class="field">
               <label for="quickNote">Rohe Notiz</label>
-              <div class="mini" style="margin-bottom:6px;">Rohnotizen sind Vorstufen. Aus ihnen können später kontrolliert geplante Features erzeugt werden.</div>
+              <div class="mini" style="margin-bottom:6px;">Rohnotizen sind Vorstufen. Aus ihnen können später kontrolliert geplante Projektbausteine erzeugt werden.</div>
               <textarea id="quickNote" placeholder="Notiz, Idee, Bug, Prompt-Hinweis ..."></textarea>
             </div>
             <div class="stack-row">
               <button class="btn btn-primary" id="btnAddNote">Als Rohnotiz speichern</button>
-              <button class="btn btn-ghost" id="btnBuildReviewPrompt">Aus aktueller Notiz Feature-Vorschläge ableiten</button>
-              <button class="btn btn-secondary" id="btnBuildNotesToFeaturesPrompt">Aus offenen Notizen Features ableiten</button>
+              <button class="btn btn-ghost" id="btnBuildReviewPrompt">Aus aktueller Notiz Projektbaustein-Vorschläge ableiten</button>
+              <button class="btn btn-secondary" id="btnBuildNotesToFeaturesPrompt">Aus offenen Notizen Projektbausteine ableiten</button>
             </div>
           </details>
 
           ${renderNoteReviewSection()}
           ${renderNoteFeaturePipelineSection(p.id, { context: 'project' })}
           <details style="margin-bottom:12px;" open>
-            <summary style="font-weight:700;">Feature-Bereinigung</summary>
+            <summary style="font-weight:700;">Projektbaustein-Bereinigung</summary>
             <div class="mini" style="margin:8px 0;">
-              Nutze das, wenn dieses Projekt bereits doppelte oder ähnliche Features enthält. Es wird kein neuer Code benötigt.
+              Nutze das, wenn dieses Projekt bereits doppelte oder ähnliche Projektbausteine enthält. Es wird kein neuer Code benötigt.
             </div>
             <div class="stack-row">
-              <button class="btn btn-secondary" id="btnBuildProjectDedupePrompt">Bestehende Features auf Dubletten prüfen</button>
+              <button class="btn btn-secondary" id="btnBuildProjectDedupePrompt">Bestehende Projektbausteine auf Dubletten prüfen</button>
             </div>
           </details>
           <details style="margin-bottom:12px;" ${trashedFeatures.length ? 'open' : ''}>
@@ -6554,7 +6554,7 @@
                     </div>
                   </div>
                 `;
-              }).join('') : '<div class="notice">Keine Features im Papierkorb.</div>'}
+              }).join('') : '<div class="notice">Keine Projektbausteine im Papierkorb.</div>'}
             </div>
           </details>
           ${renderCleanupReviewSection()}
@@ -6567,7 +6567,7 @@
           ${renderProjectImportHistory(projectImports)}
 
           <div class="mini" style="margin-bottom:6px;color:var(--ink-dim);">
-            Features: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
+            Projektbausteine: ${projectFeatures.length} | Letzte Analyse: ${latestAnalysis ? formatDateTime(latestAnalysis.createdAt) : '—'}
           </div>
           ${renderTable(projectFeatures)}
         `;
@@ -6587,7 +6587,7 @@
         return `
           ${renderContextBanner()}
           <div class="panel">
-            <div class="panel-title"><h3>Learning Tracker</h3></div>
+            <div class="panel-title"><h3>Projektjournal / Lern-Tracker</h3></div>
             <div class="notice">Abgeschlossene Chats/Sprints nachbereiten: Learnings, Anki, Dev-/Notion-DB.</div>
             <div class="stack-row" style="margin-top:10px;">
               <span class="pill">Offene Nachbereitungen: ${totalOpen}</span>
@@ -6672,7 +6672,7 @@
           '  "projectSummary": "Kurze Beschreibung des erkannten Code-Iststands",',
           '  "features": [',
           '    {',
-          '      "title": "Eindeutiger Featuretitel",',
+          '      "title": "Eindeutiger Projektbaustein-Titel",',
           '      "description": "Konkreter Codebefund ohne Spekulation",',
           '      "category": "UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges",',
           '      "status": "umgesetzt|teilweise umgesetzt|vorbereitet"',
@@ -6686,19 +6686,19 @@
           'Vertragsregeln:',
           '- Das Top-Level muss ein Objekt sein, kein Array.',
           '- Verwende für neue Ergebnisse den kanonischen Key "features". Die bestehende Eingabe kennt zusätzlich "featureCandidates" und "detectedFeatures" als Altformat-Aliase.',
-          '- "features" muss für den Cleanup-/Codeanalyse-Import ein nicht-leeres Array verwertbarer Objekte sein.',
-          '- Jedes Feature braucht mindestens einen nicht-leeren title; description, category und status sollen gesetzt sein.',
+          '- "features" muss für den Cleanup-/Analyseimport ein nicht-leeres Array verwertbarer Objekte sein.',
+          '- Jeder Projektbaustein braucht mindestens einen nicht-leeren title; description, category und status sollen gesetzt sein.',
           '- "umgesetzt" wird als bestätigt, "teilweise umgesetzt" und "vorbereitet" werden defensiv als erkannt behandelt.',
-          '- Roadtrip ordnet Analysebefunde dem implemented-Pool zu und führt sie reviewpflichtig durch den bestehenden Cleanup-Review. Gib keine planned-Pool-Einträge aus.',
+          '- Atlas HTML ordnet Analysebefunde dem implemented-Pool zu und führt sie reviewpflichtig durch den bestehenden Cleanup-Review. Gib keine planned-Pool-Einträge aus.',
           '- Unklare oder nicht sicher belegte Punkte gehören in unclearPoints statt als bestätigte Implementierung in features.',
-          '- Optionale zusätzliche Felder an Featureobjekten werden vom bestehenden Import nicht benötigt.',
+          '- Optionale zusätzliche Felder an Projektbaustein-Objekten werden vom bestehenden Import nicht benötigt.',
           '- Falls featureFlow dennoch vorkommt: leer lassen oder ausschließlich gültigen Mermaid-Code ohne Markdown-Codefences, Prosa, Pseudocode oder JSON verwenden; bevorzugt beginnend mit "flowchart TD".'
         ].join('\n');
       }
 
       function getCodeAnalysisProjectContext(projectId) {
         const project = S.projects.find(x => x.id === projectId);
-        if (!project) return 'Kein Roadtrip-Projekt ausgewählt.';
+        if (!project) return 'Kein Atlas HTML-Projekt ausgewählt.';
         return [
           'Projekt: ' + (project.title || 'Ohne Titel'),
           'Typ: ' + (project.type || '—'),
@@ -6712,29 +6712,29 @@
         const state = getCodeAnalysisPromptPrepState();
         const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
         return [
-          '# Roadtrip Codeanalyse · Fallback-Prompt',
+          '# Atlas HTML Materialanalyse / Gegenstands-Abgleich · Fallback-Prompt',
           '',
-          'Du analysierst bereitgestellten App-Code, Dateien oder Repo-Kontext für Roadtrip.',
+          'Du analysierst bereitgestellten App-Code, Dateien oder Repo-Kontext für Atlas HTML.',
           '',
           '## Aufgabe',
-          'Analysiere ausschließlich den bereitgestellten Code-Iststand und gib ein Roadtrip-kompatibles Analyse-JSON aus.',
-          'Ändere keinen Code. Erzeuge keine Roadtrip-Daten oder Features direkt. Rufe keine externen Dienste auf.',
-          'Gib nur das JSON aus, das anschließend in Roadtrips bestehende Analyse-JSON-Eingabe kopiert wird.',
+          'Analysiere ausschließlich den bereitgestellten Code-Iststand und gib ein Atlas HTML-kompatibles Analyse-JSON aus.',
+          'Ändere keinen Code. Erzeuge keine Atlas HTML-Daten oder Projektbausteine direkt. Rufe keine externen Dienste auf.',
+          'Gib nur das JSON aus, das anschließend in Atlas HTML bestehende Analyse-JSON-Eingabe kopiert wird.',
           '',
           '## Projektkontext',
           getCodeAnalysisProjectContext(projectId),
           '',
           '## Analyse-Scope / Fragestellung',
-          String(state.scope || '').trim() || 'Analysiere den sichtbaren Code-Iststand und erkenne nur belegbare Features.',
+          String(state.scope || '').trim() || 'Analysiere den sichtbaren Code-Iststand und erkenne nur belegbare Projektbausteine.',
           '',
           '## Wichtige Regeln',
-          '- Markiere nur Features als umgesetzt oder erkannt, die im Code tatsächlich sichtbar sind.',
+          '- Markiere nur Projektbausteine als umgesetzt oder erkannt, die im Code tatsächlich sichtbar sind.',
           '- Erfinde keine Implementierungen und leite keine bloßen Roadmap-Ideen als Codebefund ab.',
           '- Nutze "umgesetzt" nur bei klar vollständiger Implementierung; nutze "teilweise umgesetzt" oder "vorbereitet" für belegbare, aber unvollständige Befunde.',
           '- Unklare Kandidaten und fehlende Informationen gehören defensiv in unclearPoints.',
           '- Antworte ohne Markdown-Codefences, Einleitung, Nachsatz oder Prosa außerhalb des JSON-Objekts.',
           '',
-          '## Roadtrip-Analyse-JSON-Vertrag',
+          '## Atlas HTML-Analyse-JSON-Vertrag',
           buildRoadtripAnalysisJsonContract(),
           '',
           '## Ergebnis',
@@ -6747,41 +6747,41 @@
         const projectId = getImportTargetProjectId() || (ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '');
         const artifactDate = new Date().toISOString().slice(0, 10);
         return [
-          '# Roadtrip Codex-Cloud-Codeanalyse',
+          '# Atlas HTML Codex-Cloud-Materialanalyse / Gegenstands-Abgleich',
           '',
           'Du arbeitest in Codex Cloud auf einem GitHub-Repo oder Branch.',
           '',
           '## Ziel',
-          'Analysiere den aktuellen Code-Iststand und erzeuge ausschließlich ein Roadtrip-kompatibles Analyseartefakt als JSON-Datei.',
+          'Analysiere den aktuellen Code-Iststand und erzeuge ausschließlich ein Atlas HTML-kompatibles Analyseartefakt als JSON-Datei.',
           '',
           '## Strikte Regeln',
           '- Ändere keine App-Code-Dateien, insbesondere keine index.html.',
-          '- Ändere keine Produktlogik, führe keine Refactorings durch und baue keine Features.',
+          '- Ändere keine Produktlogik, führe keine Refactorings durch und baue keine Projektbausteine.',
           '- Erzeuge nur das Analyseartefakt; der Branch oder PR ist ausschließlich dessen Übergabeweg.',
           '- Der Analyse-PR muss nicht gemergt werden, nachdem die JSON-Datei kopiert oder heruntergeladen wurde.',
-          '- Rufe Roadtrip nicht automatisch auf und baue keine Import-, GitHub-API- oder Sync-Integration.',
+          '- Rufe Atlas HTML nicht automatisch auf und baue keine Import-, GitHub-API- oder Sync-Integration.',
           '',
-          '## Roadtrip-Projektkontext',
+          '## Atlas-HTML-Projektkontext',
           getCodeAnalysisProjectContext(projectId),
           '',
           '## Repo-/Branch-Hinweis',
           String(state.repoBranch || '').trim() || 'Analysiere das aktuell ausgecheckte Repo und den aktuellen Branch.',
           '',
           '## Analyse-Scope / Fragestellung',
-          String(state.scope || '').trim() || 'Analysiere den aktuellen Code-Iststand und erkenne nur belegbare Features.',
+          String(state.scope || '').trim() || 'Analysiere den aktuellen Code-Iststand und erkenne nur belegbare Projektbausteine.',
           '',
           '## Ausgabe',
           'Schreibe genau eine JSON-Datei nach:',
           'docs/analysis/' + artifactDate + '-code-analysis.json',
           'Wenn docs/analysis/ nicht existiert, darfst du diesen Ordner für das Analyseartefakt anlegen.',
-          'Die Datei muss direkt kopier- oder herunterladbar und für Roadtrips bestehende Analyse-JSON-Eingabe geeignet sein.',
+          'Die Datei muss direkt kopier- oder herunterladbar und für Atlas HTML bestehende Analyse-JSON-Eingabe geeignet sein.',
           'Schreibe keine Markdown-Codefences und keine Prosa in oder neben die JSON-Datei.',
           '',
-          '## Roadtrip-Analyse-JSON-Vertrag',
+          '## Atlas HTML-Analyse-JSON-Vertrag',
           buildRoadtripAnalysisJsonContract(),
           '',
           '## Regeln für Befunde',
-          '- Markiere nur tatsächlich im Code sichtbare Features als umgesetzt oder erkannt.',
+          '- Markiere nur tatsächlich im Code sichtbare Projektbausteine als umgesetzt oder erkannt.',
           '- Erfinde keine Implementierungen und behandle Roadmap-, Kommentar- oder Dokumentationswünsche nicht automatisch als umgesetzt.',
           '- Unklare Befunde und fehlende Informationen gehören in unclearPoints.',
           '',
@@ -6808,7 +6808,7 @@
         const contextProject = contextProjectId ? S.projects.find(x => x.id === contextProjectId) : null;
         return `
           ${renderContextBanner()}
-          <div class="panel-title"><h3>Import</h3></div>
+          <div class="panel-title"><h3>Import & Materialanalyse</h3></div>
           <div class="notice" style="margin-bottom:10px;">
             Import in Projekt: <strong>${contextProject ? escapeHtml(contextProject.title) : '— kein Projekt gewählt —'}</strong>
           </div>
@@ -6820,11 +6820,11 @@
             </div>
           </div>
           <details class="item" style="margin-bottom:12px;">
-            <summary style="font-weight:700;cursor:pointer;">Codex-Codeanalyse vorbereiten</summary>
-            <div class="mini" style="margin:8px 0 10px;">Erzeugt nur einen Analyseprompt. Roadtrip analysiert keinen Code automatisch und der bestehende Importflow bleibt unverändert.</div>
+            <summary style="font-weight:700;cursor:pointer;">Materialanalyse / Gegenstands-Abgleich vorbereiten (Legacy-Codepfad)</summary>
+            <div class="mini" style="margin:8px 0 10px;">Dieser Bereich ist technisch noch auf Code, Dateien und Repository-Auszüge zugeschnitten und wird später fachlich erweitert. Er erzeugt nur einen Analyseprompt; Atlas HTML analysiert Material nicht automatisch und der bestehende Importflow bleibt unverändert.</div>
             <div class="field">
               <label for="codeAnalysisScope">Analyse-Scope / Fragestellung</label>
-              <textarea id="codeAnalysisScope" style="min-height:90px;" placeholder="Welche Teile oder Fragen soll die Codeanalyse prüfen?">${escapeHtml(getCodeAnalysisPromptPrepState().scope || '')}</textarea>
+              <textarea id="codeAnalysisScope" style="min-height:90px;" placeholder="Welche Materialien, Teile oder Fragen soll der Gegenstands-Abgleich prüfen?">${escapeHtml(getCodeAnalysisPromptPrepState().scope || '')}</textarea>
             </div>
             <div class="field">
               <label for="codeAnalysisRepoBranch">Repo-/Branch-Hinweis für Codex Cloud</label>
@@ -6835,18 +6835,18 @@
               <button class="btn" id="btnBuildCodeAnalysisCloudPrompt">Codex-Cloud-Prompt erzeugen</button>
             </div>
             <div class="field" style="margin-top:12px;">
-              <label for="codeAnalysisPromptOutput">Codeanalyse-Prompt Ausgabe</label>
+              <label for="codeAnalysisPromptOutput">Prompt-Ausgabe für Materialanalyse / Gegenstands-Abgleich</label>
               <textarea id="codeAnalysisPromptOutput" style="min-height:240px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(getCodeAnalysisPromptPrepState().outputPrompt || '')}</textarea>
               <div class="stack-row" style="margin-top:6px;">
                 <button class="btn" id="btnCopyCodeAnalysisPrompt">Copy</button>
               </div>
             </div>
-            <div class="notice">Ergebnis-JSON anschließend unten in die bestehende Analyse-JSON-Eingabe einfügen und den vorhandenen Cleanup-/Codeanalyse-Import verwenden.</div>
+            <div class="notice">Ergebnis-JSON anschließend unten in die bestehende Analyse-JSON-Eingabe einfügen und den vorhandenen Cleanup-/Analyseimport verwenden.</div>
           </details>
-          <div class="field"><label for="htmlFileInput">Code-Datei / Projektdatei Upload</label><input id="htmlFileInput" type="file" accept=".html,.htm,.js,.ts,.jsx,.tsx,.css,.json,.md,.txt,text/*" /></div>
-          <div class="field"><label for="htmlTextarea">Code / Repository-Auszug Paste</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
+          <div class="field"><label for="htmlFileInput">Material-/Projektdatei (Legacy: Code-Datei)</label><input id="htmlFileInput" type="file" accept=".html,.htm,.js,.ts,.jsx,.tsx,.css,.json,.md,.txt,text/*" /></div>
+          <div class="field"><label for="htmlTextarea">Material- oder Repository-Auszug</label><textarea id="htmlTextarea" style="min-height:170px">${escapeHtml(ui.importDraft.html || '')}</textarea></div>
           <div class="stack-row">
-            <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal analysieren</button>
+            <button class="btn btn-primary" id="btnAnalyzeHtml">HTML lokal analysieren (Legacy)</button>
             <button class="btn" id="btnBuildHtmlPrompt">KI-Prompt erzeugen</button>
             <button class="btn" id="btnBuildProjectSummaryOnlyPrompt">Nur Projekt-Summary erzeugen</button>
           </div>
@@ -6863,12 +6863,12 @@
             <textarea id="promptOutput" style="min-height:220px">${escapeHtml(ui.importDraft.prompt || '')}</textarea>
           </div>
           <div class="stack-row">
-            <button class="btn btn-primary" id="btnImportJsonResult">Aktuellen Code auf umgesetzte Features prüfen</button>
+            <button class="btn btn-primary" id="btnImportJsonResult">Gegenstand auf entwickelte Projektbausteine prüfen</button>
             <button class="btn" id="btnBuildCleanupPrompt">Cleanup-Prompt bauen</button>
             <button class="btn" id="btnImportProjectSummaryOnlyJson">Projekt-Summary übernehmen</button>
             <button class="btn" id="btnFeatureFromPrompt">Fallback: Zeilen importieren</button>
           </div>
-          <div class="mini" style="margin-top:6px;">Nutze das, wenn du ein neues Analyse-JSON aus neuem Code hast.</div>
+          <div class="mini" style="margin-top:6px;">Nutze das für ein neues Analyse-JSON aus dem aktuell untersuchten Gegenstand; der Parser ist in dieser Baseline weiterhin codeorientiert.</div>
           <div class="field" style="margin-top:12px;">
             <label for="cleanupPromptOutput">Cleanup-Prompt Ausgabe</label>
             <textarea id="cleanupPromptOutput" style="min-height:180px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(ui.importDraft.cleanupPrompt || '')}</textarea>
@@ -6932,7 +6932,8 @@
 
       function renderSettingsWorkspace() {
         return `
-          <div class="panel-title settings-title"><h3>Settings</h3><div class="pill pill-outline">Atlas</div></div>
+          <div class="panel-title settings-title"><h3>Einstellungen</h3><div class="pill pill-outline">Atlas HTML</div></div>
+          <div class="notice notice-info settings-note">Atlas HTML basiert weiterhin auf kompatiblen Roadtrip-Datenverträgen. Interne Storage-, Export-, Handoff- und Sync-Bezeichner bleiben in dieser Baseline bewusst unverändert.</div>
           <div class="settings-stack">
             <section class="settings-group" aria-label="Darstellung">
               <div class="panel-title"><h3>Darstellung</h3><div class="section-label">Theme · Schrift</div></div>
@@ -6975,7 +6976,7 @@
               <div class="stack-row settings-actions">
                 <button class="btn btn-secondary" id="btnTestTrello">Trello-Verbindung testen</button>
               </div>
-              <div class="notice notice-info settings-note">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Roadtrip verwalteten Sync-Block.</div>
+              <div class="notice notice-info settings-note">Listen werden bei Bedarf anhand deiner Statusnamen erstellt. Labels folgen der Konvention <code>P:</code>, <code>C:</code> und <code>Prio:</code>. Die Kartenbeschreibung bekommt oben einen von Atlas HTML verwalteten Sync-Block.</div>
             </section>
 
             <section class="settings-group" aria-label="Datenverwaltung">
@@ -7122,11 +7123,11 @@
         const parts = [
           ['Zweck', f.purpose],
           ['Workflow-Kontext', f.workflowContext],
-          ['Feature-Flow / Mermaid', f.featureFlow],
+          ['Projektbaustein-Flow / Mermaid', f.featureFlow],
           ['Akzeptanzkriterien', criteria.map(item => `• ${item}`).join('\n')],
           ['Quellen / Notizen / Handoff', f.sourceContext]
         ].filter(([, value]) => String(value || '').trim());
-        if (!parts.length) return '<div class="feature-detail-readonly mini">Noch keine Planned-Feature-Details gepflegt.</div>';
+        if (!parts.length) return '<div class="feature-detail-readonly mini">Noch keine Planned-Projektbaustein-Details gepflegt.</div>';
         return `<div class="feature-detail-readonly">${parts.map(([label, value]) => `<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`).join('')}</div>${showPreview ? renderFeatureFlowPreviewShell(f.id, f.featureFlow) : ''}`;
       }
 
@@ -7140,14 +7141,14 @@
         return `
           <div class="feature-edit-form" data-planned-feature-edit-form="${escapeAttr(f.id)}">
             <div class="feature-edit-grid">
-              <div class="field field-wide"><label>Titel</label><input data-edit-feature-title="${escapeAttr(f.id)}" value="${escapeAttr(f.title || '')}" placeholder="Feature-Titel"></div>
+              <div class="field field-wide"><label>Titel</label><input data-edit-feature-title="${escapeAttr(f.id)}" value="${escapeAttr(f.title || '')}" placeholder="Projektbaustein-Titel"></div>
               <div class="field field-wide"><label>Beschreibung</label><textarea data-edit-feature-description="${escapeAttr(f.id)}" placeholder="Kurzbeschreibung">${escapeHtml(f.description || '')}</textarea></div>
               <div class="field"><label>Kategorie</label><select data-edit-feature-category="${escapeAttr(f.id)}">${FEATURE_CATEGORIES.map(category => `<option value="${escapeAttr(category)}" ${category===categoryValue?'selected':''}>${escapeHtml(category)}</option>`).join('')}</select></div>
               <div class="field"><label>Priorität</label><select data-edit-feature-priority="${escapeAttr(f.id)}">${PRIORITIES.map(priority => `<option value="${escapeAttr(priority)}" ${priority===priorityValue?'selected':''}>${escapeHtml(priority)}</option>`).join('')}</select></div>
               <div class="field"><label>Status</label><select data-edit-feature-status="${escapeAttr(f.id)}">${plannedStatuses.map(status => `<option value="${escapeAttr(status)}" ${status===statusValue?'selected':''}>${escapeHtml(getFeatureStatusLabel(status))}</option>`).join('')}</select></div>
-              <div class="field field-wide"><label>Zweck / Warum?</label><textarea data-edit-feature-purpose="${escapeAttr(f.id)}" placeholder="Warum gibt es dieses Feature?">${escapeHtml(f.purpose || '')}</textarea></div>
+              <div class="field field-wide"><label>Zweck / Warum?</label><textarea data-edit-feature-purpose="${escapeAttr(f.id)}" placeholder="Warum gibt es dieses Projektbaustein?">${escapeHtml(f.purpose || '')}</textarea></div>
               <div class="field field-wide"><label>Workflow-Kontext / Problem</label><textarea data-edit-feature-workflow-context="${escapeAttr(f.id)}" placeholder="Welchen alten Workflow oder welches Problem verbessert es?">${escapeHtml(f.workflowContext || '')}</textarea></div>
-              <div class="field field-wide"><label>Feature-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: ausschließlich Mermaid-Code, bevorzugt mit flowchart TD. Wird nur als Text gespeichert und in Prompts übernommen.</div>${renderFeatureFlowPreviewShell(f.id, f.featureFlow)}</div>
+              <div class="field field-wide"><label>Projektbaustein-Flow / Mermaid-Skizze</label><textarea data-edit-feature-feature-flow="${escapeAttr(f.id)}" placeholder="${escapeAttr(featureFlowPlaceholder)}">${escapeHtml(f.featureFlow || '')}</textarea><div class="muted" style="font-size:12px;margin-top:4px;">Optional: ausschließlich Mermaid-Code, bevorzugt mit flowchart TD. Wird nur als Text gespeichert und in Prompts übernommen.</div>${renderFeatureFlowPreviewShell(f.id, f.featureFlow)}</div>
               <div class="field field-wide"><label>Akzeptanzkriterien (eine Zeile pro Kriterium)</label><textarea data-edit-feature-acceptance-criteria="${escapeAttr(f.id)}" placeholder="Kriterium 1\nKriterium 2">${escapeHtml(criteriaText)}</textarea></div>
               <div class="field field-wide"><label>Quellen / Notizen / Handoff-Bezug</label><textarea data-edit-feature-source-context="${escapeAttr(f.id)}" placeholder="Notizen, Handoff-Link, Chat-Bezug ...">${escapeHtml(f.sourceContext || '')}</textarea></div>
             </div>
@@ -7192,7 +7193,7 @@
               </div>
               ${isPlannedFeature(f) ? renderPlannedFeatureDetailSummary(f, !isEditingPlannedFeature) : ''}
               <div class="feature-cell-actions">
-                ${isPlannedFeature(f) ? `<button class="btn btn-secondary" data-edit-planned-feature="${escapeAttr(f.id)}">Feature bearbeiten</button>` : ''}
+                ${isPlannedFeature(f) ? `<button class="btn btn-secondary" data-edit-planned-feature="${escapeAttr(f.id)}">Projektbaustein bearbeiten</button>` : ''}
                 <button class="btn" data-sync-feature="${escapeAttr(f.id)}">${f.trello && f.trello.cardId ? 'Trello updaten' : 'Nach Trello'}</button>
                 ${f.trello && f.trello.cardId ? `<button class="btn" data-pull-feature="${escapeAttr(f.id)}">Von Trello</button>` : ''}
                 ${f.trello && f.trello.cardId ? `<button class="btn" data-open-trello-card="${escapeAttr(f.id)}">Öffnen</button>` : ''}
@@ -7211,7 +7212,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Feature</th>
+                  <th>Projektbaustein</th>
                   <th>Pool</th>
                   <th>Status</th>
                   <th>Priorität</th>
@@ -7239,7 +7240,7 @@
                     <td><span class="pill pill-outline">${escapeHtml(f.category)}</span></td>
                     <td><span class="feature-updated">${escapeHtml(formatDateTime(f.updatedAt || f.createdAt || ''))}</span></td>
                   </tr>
-                `).join('') || '<tr><td colspan="6">Keine Features passend zu deinen Filtern.</td></tr>'}
+                `).join('') || '<tr><td colspan="6">Keine Projektbausteine passend zu deinen Filtern.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -7272,7 +7273,7 @@
                 </div>
                 <div class="mini">${escapeHtml(getTrelloSyncBadge(f))}</div>
               </article>
-            `).join('') || '<div class="notice">Keine Features vorhanden.</div>'}
+            `).join('') || '<div class="notice">Keine Projektbausteine vorhanden.</div>'}
           </div>
         `;
       }
@@ -7303,7 +7304,7 @@
         const activeProjectId = st.projectId && st.projectId !== 'all' && st.projectId !== 'none' ? st.projectId : '';
         return `
           <div class="notes-workspace">
-            <div class="panel-title"><h3>Notes Workspace</h3><div class="mini">Zentraler Workspace für rohe Projekt-Notizen aus S.notes.</div></div>
+            <div class="panel-title"><h3>Notiz-Arbeitsraum</h3><div class="mini">Zentraler Arbeitsraum für rohe und weiterzuverarbeitende Projektnotizen.</div></div>
             <div class="field">
               <label for="notesWorkspaceText">Neue Notiz</label>
               <textarea id="notesWorkspaceText" placeholder="Notiz, Idee, Bug, Frage, Entscheidung ..."></textarea>
@@ -7319,7 +7320,7 @@
               <div class="field notes-workspace-type-field"><label for="notesWorkspaceTypeFilter">Typ</label><select id="notesWorkspaceTypeFilter">${typeOptions}</select></div>
               <div class="field notes-workspace-search-field"><label for="notesWorkspaceSearch">Suche</label><input id="notesWorkspaceSearch" value="${escapeAttr(st.search || '')}" placeholder="Text, Projekt, Quelle ..." /></div>
             </div>
-            ${activeProjectId ? `<div class="notice notes-workspace-notice">Batch-Pipeline für dieses Projekt bleibt im Project View: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
+            ${activeProjectId ? `<div class="notice notes-workspace-notice">Die Batch-Pipeline für dieses Projekt bleibt im Projektarbeitsraum: <button class="btn btn-secondary" data-open-notes-project="${escapeAttr(activeProjectId)}">Projekt öffnen</button></div>` : ''}
             <div class="list">
               ${notes.map(note => renderNotesWorkspaceItem(note)).join('') || '<div class="notice">Keine passenden Notizen.</div>'}
             </div>
@@ -7334,7 +7335,7 @@
         const projectName = getProjectTitle(projectId) || 'Ohne Projekt';
         const text = getNoteText(note);
         const isEditing = ui.notesWorkspace && ui.notesWorkspace.editingNoteId === note.id;
-        const featureHint = note.processedIntoFeatureId ? `<span class="pill pill-success">Feature: ${escapeHtml(note.processedIntoFeatureId)}</span>` : '';
+        const featureHint = note.processedIntoFeatureId ? `<span class="pill pill-success">Projektbaustein: ${escapeHtml(note.processedIntoFeatureId)}</span>` : '';
         const sourceHint = note.sourceType ? `<span class="pill">Quelle: ${escapeHtml(note.sourceType)}</span>` : '';
         const statusPillClass = status === 'processed' ? 'pill pill-success' : (status === 'archived' ? 'pill pill-outline' : 'pill');
         if (isEditing) {
@@ -7364,7 +7365,7 @@
             </div>
             <div class="stack-row">
               <button class="btn" data-edit-note="${escapeAttr(note.id)}">Bearbeiten</button>
-              <button class="btn" data-add-feature-from-note="${escapeAttr(note.id)}" ${projectId ? '' : 'disabled'}>Als Feature übernehmen</button>
+              <button class="btn" data-add-feature-from-note="${escapeAttr(note.id)}" ${projectId ? '' : 'disabled'}>Als Projektbaustein übernehmen</button>
               ${status === 'open' ? `<button class="btn" data-mark-note="${escapeAttr(note.id)}">Verarbeitet</button>` : `<button class="btn" data-open-note="${escapeAttr(note.id)}">Wieder offen</button>`}
               ${status !== 'archived' ? `<button class="btn" data-archive-note="${escapeAttr(note.id)}">Archivieren</button>` : ''}
               <button class="btn btn-danger" data-delete-note="${escapeAttr(note.id)}">Löschen</button>
@@ -7388,8 +7389,8 @@
                   <span class="pill">${formatDateTime(n.createdAt)}</span>${n.updatedAt ? `<span class="pill">aktualisiert: ${formatDateTime(n.updatedAt)}</span>` : ''}
                 </div>
                 <div class="stack-row">
-                  <button class="btn" data-build-note-prompt="${n.id}">Aus Notiz Feature-Vorschläge ableiten</button>
-                  <button class="btn" data-add-feature-from-note="${n.id}">Als geplantes Feature übernehmen</button>
+                  <button class="btn" data-build-note-prompt="${n.id}">Aus Notiz Projektbaustein-Vorschläge ableiten</button>
+                  <button class="btn" data-add-feature-from-note="${n.id}">Als geplantes Projektbaustein übernehmen</button>
                   ${isOpenNote(n) ? `<button class="btn" data-mark-note="${n.id}">Als verarbeitet markieren</button>` : `<button class="btn" data-open-note="${n.id}">Wieder offen</button>`}
                   <button class="btn btn-danger" data-delete-note="${n.id}">Löschen</button>
                 </div>
@@ -7412,12 +7413,12 @@
                 <div class="item-desc">${escapeHtml(p.summary || '')}</div>
                 <div class="meta">
                   <span class="pill">${escapeHtml(p.type || '—')}</span>
-                  <span class="pill">${getVisibleFeatures(S.features).filter(f => f.projectId === p.id).length} Features</span>
+                  <span class="pill">${getVisibleFeatures(S.features).filter(f => f.projectId === p.id).length} Projektbausteine</span>
                   <span class="pill">${S.notes.filter(n => n.projectId === p.id && isOpenNote(n)).length} Notizen</span>
                 </div>
                 <div class="stack-row">
                   <button class="btn" data-edit-project="${p.id}">Bearbeiten</button>
-                  <button class="btn" data-create-feature="${p.id}">Schnell-Feature</button>
+                  <button class="btn" data-create-feature="${p.id}">Schnell-Projektbaustein</button>
                   <button class="btn btn-danger" data-delete-project="${p.id}">Löschen</button>
                 </div>
               </article>
@@ -7590,7 +7591,7 @@
       function deleteProject(id) {
         const p = S.projects.find(x => x.id === id);
         if (!p) return;
-        if (!confirm(`Projekt "${p.title}" wirklich löschen? Zugehörige Features und Projekt-Notizen werden ebenfalls gelöscht.`)) return;
+        if (!confirm(`Projekt "${p.title}" wirklich löschen? Zugehörige Projektbausteine und Projekt-Notizen werden ebenfalls gelöscht.`)) return;
         const deletedProjectIds = new Set();
         if (id) deletedProjectIds.add(id);
         (S.features || []).forEach(f => { if (f && f.projectId === id && f.id) deletedProjectIds.add(f.id); });
@@ -7725,13 +7726,13 @@
         const now = new Date().toISOString();
         const suggested = getFirstMeaningfulNoteLine(n.text);
         let title = suggested;
-        if (!title || title.length > 80) title = prompt('Feature-Titel bestätigen oder eingeben:', title || '');
-        if (!title || !title.trim()) title = prompt('Bitte Feature-Titel eingeben (Pflicht):', '');
+        if (!title || title.length > 80) title = prompt('Projektbaustein-Titel bestätigen oder eingeben:', title || '');
+        if (!title || !title.trim()) title = prompt('Bitte Projektbaustein-Titel eingeben (Pflicht):', '');
         if (!title || !title.trim()) return;
         title = title.trim();
         const normalizedTitle = normalizeText(title);
         const hasDup = getVisibleFeatures(S.features).some(f => f.projectId === (n.projectId || '') && isPlannedFeature(f) && normalizeText(f.title || '') === normalizedTitle);
-        if (hasDup && !confirm('Ähnliches geplantes Feature existiert bereits. Trotzdem übernehmen?')) return;
+        if (hasDup && !confirm('Ähnliches geplantes Projektbaustein existiert bereits. Trotzdem übernehmen?')) return;
         const featureId = uid('f');
         S.features.push(ensureFeatureDefaults({
           id: featureId,
@@ -7754,7 +7755,7 @@
         n.updatedAt = now;
         const project = S.projects.find(p => p.id === (n.projectId || ''));
         if (project) project.updatedAt = now;
-        alert('Feature wurde als geplantes Feature erstellt.\nIn Database sichtbar unter: Geplante Features');
+        alert('Projektbaustein wurde als geplanter Projektbaustein erstellt.\nIn der Projektbaustein-Datenbank sichtbar unter: Geplante Projektbausteine');
         save();
         renderView();
       }
@@ -7765,7 +7766,7 @@
         const planned = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isPlannedFeature(f));
         const implemented = getVisibleFeatures(S.features).filter(f => f.projectId === projectId && isImplementedFeature(f)).slice(0, 10);
         const notes = (S.notes || []).filter(n => n && n.projectId === projectId && isOpenNote(n) && String(n.text || '').trim());
-        return `# Roadtrip Raw Notes -> Planned Features\nProjekt: ${project.title || '—'}\nSummary: ${project.summary || '—'}\nCurrent Focus: ${project.currentFocus || '—'}\nNext Step: ${project.nextStep || '—'}\n\nBestehende planned Features:\n${planned.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nBestehende implemented Features (gekürzt):\n${implemented.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nOffene Raw Notes:\n${notes.map(n => `- ID: ${n.id} | createdAt: ${n.createdAt || '—'} | sourceType: ${n.sourceType || 'note'} | Text: ${shorten(String(n.text || '').trim(), 800)}`).join('\n') || '- —'}\n\nRegeln:\n- Raw Notes sind noch keine Features.\n- Nur echte Feature-Ideen in proposedFeatures.\n- Keine bestehenden Features doppeln.\n- Keine implemented Features neu als planned anlegen.\n- Wenn unklar, rationale erklären und lieber keinen Vorschlag machen.\n\nGib ausschließlich JSON zurück:\n{\n  \"proposedFeatures\": [{\"title\":\"...\",\"description\":\"...\",\"sourceNoteIds\":[\"n_...\"],\"rationale\":\"...\",\"suggestedPriority\":\"niedrig|mittel|hoch|kritisch\",\"suggestedCategory\":\"UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges\",\"suggestedStatus\":\"idea|planned\"}],\n  \"notesToMarkProcessed\": [\"n_...\"],\n  \"summary\": \"...\"\n}`;
+        return `# Atlas HTML Rohnotizen → geplante Projektbausteine\nProjekt: ${project.title || '—'}\nSummary: ${project.summary || '—'}\nCurrent Focus: ${project.currentFocus || '—'}\nNext Step: ${project.nextStep || '—'}\n\nBestehende geplante Projektbausteine:\n${planned.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nBestehende abgeschlossene / entwickelte Projektbausteine (gekürzt):\n${implemented.map(f => `- ${f.id} | ${f.title} | ${f.status}`).join('\n') || '- —'}\n\nOffene Rohnotizen:\n${notes.map(n => `- ID: ${n.id} | createdAt: ${n.createdAt || '—'} | sourceType: ${n.sourceType || 'note'} | Text: ${shorten(String(n.text || '').trim(), 800)}`).join('\n') || '- —'}\n\nRegeln:\n- Rohnotizen sind noch keine Projektbausteine.\n- Nur echte Projektbaustein-Ideen in proposedFeatures.\n- Keine bestehenden Projektbausteine doppeln.\n- Keine abgeschlossenen / entwickelten Projektbausteine neu als planned anlegen.\n- Wenn unklar, rationale erklären und lieber keinen Vorschlag machen.\n\nGib ausschließlich JSON zurück:\n{\n  \"proposedFeatures\": [{\"title\":\"...\",\"description\":\"...\",\"sourceNoteIds\":[\"n_...\"],\"rationale\":\"...\",\"suggestedPriority\":\"niedrig|mittel|hoch|kritisch\",\"suggestedCategory\":\"UI|Workflow|Sync|KI|Import/Export|Darstellung|Datenmodell|Ansicht|Sonstiges\",\"suggestedStatus\":\"idea|planned\"}],\n  \"notesToMarkProcessed\": [\"n_...\"],\n  \"summary\": \"...\"\n}`;
       }
 
       function updateFeatureStatus(id, status) {
@@ -7821,7 +7822,7 @@
 
         const title = String((getPlannedFeatureEditField(id, 'title') || {}).value || '').trim();
         if (!title) {
-          alert('Bitte gib einen Feature-Titel ein. Leere Titel werden nicht gespeichert.');
+          alert('Bitte gib einen Projektbaustein-Titel ein. Leere Titel werden nicht gespeichert.');
           return;
         }
 
@@ -7979,11 +7980,11 @@
         output.innerHTML = '';
         const source = getFeatureFlowPreviewSource(featureId);
         if (!String(source || '').trim()) {
-          setFeatureFlowPreviewStatus(featureId, 'Kein Feature-Flow vorhanden.', true);
+          setFeatureFlowPreviewStatus(featureId, 'Kein Projektbaustein-Flow vorhanden.', true);
           return;
         }
         if (!isLikelyMermaidDiagram(source)) {
-          showFeatureFlowPreviewError(featureId, 'featureFlow enthält keinen erkennbaren Mermaid-Code.', 'Preview übersprungen. Der Feature-Flow-Text bleibt unverändert.');
+          showFeatureFlowPreviewError(featureId, 'featureFlow enthält keinen erkennbaren Mermaid-Code.', 'Preview übersprungen. Der Projektbaustein-Flow-Text bleibt unverändert.');
           return;
         }
         setFeatureFlowPreviewStatus(featureId, 'Preview wird gerendert …', false);
@@ -7998,7 +7999,7 @@
           setFeatureFlowPreviewStatus(featureId, 'Preview gerendert. Der gespeicherte Text wurde nicht verändert.', false);
         } catch (err) {
           cleanupMermaidArtifacts();
-          showFeatureFlowPreviewError(featureId, `Mermaid-Preview fehlgeschlagen: ${err && err.message ? err.message : String(err || 'Unbekannter Fehler')}`, 'Preview fehlgeschlagen. Der Feature-Flow-Text bleibt unverändert.');
+          showFeatureFlowPreviewError(featureId, `Mermaid-Preview fehlgeschlagen: ${err && err.message ? err.message : String(err || 'Unbekannter Fehler')}`, 'Preview fehlgeschlagen. Der Projektbaustein-Flow-Text bleibt unverändert.');
         }
       }
 
@@ -8028,9 +8029,9 @@
             tmp.focus();
             tmp.select();
             const ok = document.execCommand && document.execCommand('copy');
-            alert(ok ? 'Mermaid-Code kopiert.' : 'Kopieren fehlgeschlagen. Bitte den Feature-Flow-Text manuell markieren.');
+            alert(ok ? 'Mermaid-Code kopiert.' : 'Kopieren fehlgeschlagen. Bitte den Projektbaustein-Flow-Text manuell markieren.');
           } catch (_) {
-            alert('Kopieren fehlgeschlagen. Bitte den Feature-Flow-Text manuell markieren.');
+            alert('Kopieren fehlgeschlagen. Bitte den Projektbaustein-Flow-Text manuell markieren.');
           } finally {
             tmp.remove();
           }
@@ -8081,9 +8082,9 @@
           sourceContext: normalizeFeatureDetailText(f.sourceContext),
           featureFlow: normalizeFeatureDetailText(f.featureFlow)
         }));
-        const prompt = `# Roadtrip Planned Feature Backfill / Hauptchat-Abgleich
+        const prompt = `# Atlas HTML Planned Projektbaustein Backfill / Hauptchat-Abgleich
 
-Du ergänzt Detailfelder für MEHRERE bestehende planned Features dieses Projekts. Nutze den Projekt- und Hauptchat-Kontext, um fehlende oder sehr dünne Details konservativ zu ergänzen.
+Du ergänzt Detailfelder für MEHRERE bestehende geplante Projektbausteine dieses Projekts. Nutze den Projekt- und Hauptchat-Kontext, um fehlende oder sehr dünne Details konservativ zu ergänzen.
 
 ## Projektkontext
 - Projekt-ID: ${project.id || projectId}
@@ -8104,16 +8105,16 @@ Du ergänzt Detailfelder für MEHRERE bestehende planned Features dieses Projekt
 ## Relevante offene Notizen (max. 6, gekürzt)
 ${relevantNotes.length ? relevantNotes.join('\n') : '- —'}
 
-## Sparse planned Features im Prompt
+## Dünn befüllte geplante Projektbausteine im Prompt
 ${features.length ? JSON.stringify(featureJson, null, 2) : '[]'}
 
-Hinweis: Es gibt insgesamt ${totalSparse} sparse planned Features in diesem Projekt; dieser Prompt enthält maximal ${promptLimit} davon.
+Hinweis: Es gibt insgesamt ${totalSparse} dünn befüllte geplante Projektbausteine in diesem Projekt; dieser Prompt enthält maximal ${promptLimit} davon.
 
 ## Regeln
-- Aktualisiere ausschließlich bestehende planned Features aus der Liste oben.
+- Aktualisiere ausschließlich bestehende geplante Projektbausteine aus der Liste oben.
 - Verwende ausschließlich featureId-Werte aus der Liste oben.
-- Erzeuge keine neuen Features.
-- Fasse keine implemented Features an.
+- Erzeuge keine neuen Projektbausteine.
+- Fasse keine abgeschlossenen / entwickelten Projektbausteine an.
 - Überschreibe vorhandene gute Daten nicht, verschlechtere sie nicht und leere sie niemals.
 - Ergänze fehlende oder sehr dünne Details nur, wenn der Kontext dafür ausreicht.
 - Erfinde nichts frei. Markiere Unsicherheit entweder in openQuestions oder als Unsicherheit in sourceContext.
@@ -8507,9 +8508,9 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         const item = getImportReviewItem(reviewId);
         if (!item) return;
         const feature = S.features.find(f => f && f.id === item.existingFeatureId && f.projectId === item.projectId);
-        if (!feature) return alert('Bestehendes Feature wurde nicht gefunden.');
+        if (!feature) return alert('Bestehender Projektbaustein wurde nicht gefunden.');
         applyFeatureDefaults(feature);
-        if (!isPlannedFeature(feature)) return alert('Dieses Match ist implemented. Roadtrip ändert implemented Features beim Import-Review nicht.');
+        if (!isPlannedFeature(feature)) return alert('Dieses Match gehört zum abgeschlossenen / entwickelten Pool. Atlas HTML ändert abgeschlossene / entwickelte Projektbausteine beim Import-Review nicht.');
         const candidate = item.candidate || {};
         let changed = false;
         const setIfEmpty = (field) => {
@@ -8571,19 +8572,19 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         const item = getImportReviewItem(reviewId);
         if (!item) return;
         const feature = S.features.find(f => f && f.id === item.existingFeatureId && f.projectId === item.projectId);
-        if (!feature) return alert('Bestehendes Feature wurde nicht gefunden.');
+        if (!feature) return alert('Bestehender Projektbaustein wurde nicht gefunden.');
         applyFeatureDefaults(feature);
-        if (isImplementedFeature(feature)) return alert('Dieses Match ist implemented. Roadtrip überschreibt implemented Features beim Import-Review nicht.');
-        if (!isPlannedFeature(feature)) return alert('Nur planned Features können den Import-Kandidaten als bessere Version übernehmen.');
+        if (isImplementedFeature(feature)) return alert('Dieses Match gehört zum abgeschlossenen / entwickelten Pool. Atlas HTML überschreibt abgeschlossene / entwickelte Projektbausteine beim Import-Review nicht.');
+        if (!isPlannedFeature(feature)) return alert('Nur geplante Projektbausteine können den Import-Kandidaten als bessere Version übernehmen.');
         const candidate = item.candidate || {};
         const ok = window.confirm(`Import-Kandidat als bessere Version übernehmen?
 
-Die bestehende Feature-ID bleibt erhalten:
+Die bestehende Projektbaustein-ID bleibt erhalten:
 ${feature.id}
 
-Das planned Feature wird mit Kandidatendaten aktualisiert.
+Der geplante Projektbaustein wird mit Kandidatendaten aktualisiert.
 Alte relevante Informationen wie sourceContext, acceptanceCriteria und offene Fragen werden defensiv erhalten oder ergänzt.
-Implemented Features können nicht überschrieben werden.
+Implemented Projektbausteine können nicht überschrieben werden.
 
 Diese Aktion ist keine Neuanlage.
 
@@ -8625,7 +8626,7 @@ ${previousSourceContext}`);
           sourceContext = appendUniqueSection(sourceContext, 'Offene Fragen aus Import-Review:', openQuestions);
           if (Object.prototype.hasOwnProperty.call(feature, 'openQuestions')) feature.openQuestions = openQuestions;
         }
-        sourceContext = appendUniqueText(sourceContext, `Import-Review ${now}: Import-Kandidat als bessere Version übernommen; bestehende Feature-ID blieb erhalten.`);
+        sourceContext = appendUniqueText(sourceContext, `Import-Review ${now}: Import-Kandidat als bessere Version übernommen; bestehende Projektbaustein-ID blieb erhalten.`);
         feature.sourceContext = sourceContext;
 
         feature.id = keepId;
@@ -8647,9 +8648,9 @@ ${previousSourceContext}`);
         const item = getImportReviewItem(reviewId);
         if (!item) return;
         const candidate = item.candidate || {};
-        const existingLabel = item.existing && (item.existing.title || item.existing.id) || item.existingFeatureId || 'unbekanntes Feature';
+        const existingLabel = item.existing && (item.existing.title || item.existing.id) || item.existingFeatureId || 'unbekanntes Projektbaustein';
         const note = [
-          `Import-Review ${new Date().toISOString()}: ${modeLabel || 'Als neues planned Feature angelegt'}.`,
+          `Import-Review ${new Date().toISOString()}: ${modeLabel || 'Als neuer geplanter Projektbaustein angelegt'}.`,
           `Quelle: ${item.importSource || 'Import'}.`,
           `Möglicher Dubletten-/Merge-Kandidat zu „${existingLabel}“${item.existingFeatureId ? ` (${item.existingFeatureId})` : ''}.`,
           item.reason ? `Match-Grund: ${item.reason}.` : ''
@@ -8681,7 +8682,7 @@ ${previousSourceContext}`);
         const items = (state.items || []).filter(item => item && item.status !== 'ignored');
         if (!items.length) return '';
         return `<div class="cleanup-review-shell">
-          <div class="cleanup-review-summary"><span>Import-Review: übersprungene Feature-Kandidaten</span><span class="pill">${items.length}</span></div>
+          <div class="cleanup-review-summary"><span>Import-Review: übersprungene Projektbaustein-Kandidaten</span><span class="pill">${items.length}</span></div>
           <div class="cleanup-review-list list">
             ${items.map(item => {
               const isDone = item.status && item.status !== 'open';
@@ -8693,16 +8694,16 @@ ${previousSourceContext}`);
                   <div><strong>Mögliche Dublette</strong><div class="mini">${escapeHtml(item.importSource || 'Import')} · ${escapeHtml(item.reason || 'mögliche Dublette')} · Status: ${escapeHtml(item.status || 'open')}</div></div>
                   <span class="pill">${escapeHtml(existingPool || 'planned')}</span>
                 </div>
-                ${implemented ? '<div class="notice notice-info" style="margin-top:8px;">Match ist implemented: leere Felder ergänzen und Kandidat übernehmen sind gesperrt; implemented Feature bleibt unverändert.</div>' : ''}
+                ${implemented ? '<div class="notice notice-info" style="margin-top:8px;">Match gehört zum abgeschlossenen / entwickelten Pool: leere Felder ergänzen und Kandidat übernehmen sind gesperrt; der abgeschlossene / entwickelte Projektbaustein bleibt unverändert.</div>' : ''}
                 <div class="stack-row" style="align-items:stretch;margin-top:10px;">
-                  ${renderImportReviewFeatureColumn('Bestehendes Feature', item.existing)}
+                  ${renderImportReviewFeatureColumn('Bestehender Projektbaustein', item.existing)}
                   ${renderImportReviewFeatureColumn('Import-Kandidat', item.candidate)}
                 </div>
                 <div class="cleanup-review-actions stack-row" style="margin-top:10px;">
                   <button class="btn" data-import-dup-ignore="${escapeAttr(item.id)}">Ignorieren</button>
                   <button class="btn btn-secondary" data-import-dup-fill="${escapeAttr(item.id)}" ${implemented || isDone ? 'disabled' : ''} title="Überschreibt keine bestehenden nichtleeren Felder.">Nur leere Felder ergänzen</button>
-                  <button class="btn btn-secondary" data-import-dup-adopt="${escapeAttr(item.id)}" ${canAdopt ? '' : 'disabled'} title="Behält die bestehende Feature-ID und aktualisiert das planned Feature defensiv mit Kandidatendaten.">Import-Kandidat als bessere Version übernehmen</button>
-                  <button class="btn btn-secondary" data-import-dup-create="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Als neues planned Feature anlegen</button>
+                  <button class="btn btn-secondary" data-import-dup-adopt="${escapeAttr(item.id)}" ${canAdopt ? '' : 'disabled'} title="Behält die bestehende Projektbaustein-ID und aktualisiert den geplanten Projektbaustein defensiv mit Kandidatendaten.">Import-Kandidat als bessere Version übernehmen</button>
+                  <button class="btn btn-secondary" data-import-dup-create="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Als neuen geplanten Projektbaustein anlegen</button>
                   <button class="btn btn-secondary" data-import-dup-later="${escapeAttr(item.id)}" ${isDone ? 'disabled' : ''}>Später prüfen</button>
                 </div>
                 <div class="mini" style="margin-top:6px;">Du kannst leere Felder ergänzen, den Import-Kandidaten als bessere Version übernehmen, den Kandidaten neu anlegen, später prüfen oder ignorieren. Feldweise Auswahl ist nicht Teil dieses MVP.</div>
@@ -8895,15 +8896,15 @@ ${previousSourceContext}`);
 
       function buildPlannedFeatureRefinePrompt(id) {
         const feature = S.features.find(x => x.id === id);
-        if (!feature) return alert('Feature nicht gefunden.');
+        if (!feature) return alert('Projektbaustein nicht gefunden.');
         applyFeatureDefaults(feature);
-        if (!isPlannedFeature(feature)) return alert('Dieser Workflow ist nur für planned Features verfügbar.');
+        if (!isPlannedFeature(feature)) return alert('Dieser Workflow ist nur für geplante Projektbausteine verfügbar.');
         const f = getEditablePlannedFeatureSnapshot(feature);
         const project = (S.projects || []).find(p => p.id === f.projectId) || {};
         const notesContext = getProjectNotesContext(f.projectId, f.sourceNoteIds);
-        const prompt = `# Roadtrip Planned Feature Refine / Brainstorm
+        const prompt = `# Atlas HTML Planned Projektbaustein Refine / Brainstorm
 
-Du schärfst genau EIN geplantes Feature. Erzeuge keine neuen Features und ändere keine Feature-ID.
+Du schärfst genau EIN geplantes Projektbaustein. Erzeuge keine neuen Projektbausteine und ändere keine Projektbaustein-ID.
 
 ## Projektkontext
 - Projekt-ID: ${project.id || f.projectId || '—'}
@@ -8913,8 +8914,8 @@ Du schärfst genau EIN geplantes Feature. Erzeuge keine neuen Features und ände
 - Current Focus: ${project.currentFocus || '—'}
 - Next Step: ${project.nextStep || '—'}
 
-## Planned Feature
-- Feature-ID: ${f.id}
+## Planned Projektbaustein
+- Projektbaustein-ID: ${f.id}
 - Titel: ${f.title || '—'}
 - Beschreibung: ${f.description || '—'}
 - Kategorie: ${f.category || '—'}
@@ -8922,7 +8923,7 @@ Du schärfst genau EIN geplantes Feature. Erzeuge keine neuen Features und ände
 - Status: ${getFeatureStatusLabel(f.status)} (${f.status || '—'})
 - Zweck: ${f.purpose || '—'}
 - Workflow-Kontext / altes Problem: ${f.workflowContext || '—'}
-- Feature-Flow / Mermaid:\n${f.featureFlow ? f.featureFlow.split(/\r?\n/).map(line => `  ${line}`).join('\n') : '  - —'}
+- Projektbaustein-Flow / Mermaid:\n${f.featureFlow ? f.featureFlow.split(/\r?\n/).map(line => `  ${line}`).join('\n') : '  - —'}
 - Akzeptanzkriterien:\n${f.acceptanceCriteria.length ? f.acceptanceCriteria.map(item => `  - ${item}`).join('\n') : '  - —'}
 - Quellen / Notizen / Handoff-Bezug: ${f.sourceContext || '—'}
 - SourceType: ${f.sourceType || '—'}
@@ -8932,7 +8933,7 @@ Du schärfst genau EIN geplantes Feature. Erzeuge keine neuen Features und ände
 ${notesContext || '- —'}
 
 ## Aufgabe
-- Formuliere das Feature präziser, ohne daraus mehrere Features zu machen.
+- Formuliere den Projektbaustein präziser, ohne daraus mehrere Projektbausteine zu machen.
 - Beschreibe klar Zweck / Warum.
 - Benenne den alten Workflow, das Problem oder den Schmerzpunkt.
 - Formuliere konkrete, testbare Akzeptanzkriterien.
@@ -9000,7 +9001,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const feature = S.features.find(x => x.id === payloadFeatureId);
         if (!feature) return alert('featureId existiert nicht.');
         applyFeatureDefaults(feature);
-        if (!isPlannedFeature(feature)) return alert('Dieses Feature ist nicht planned und wird nicht über diesen Workflow aktualisiert.');
+        if (!isPlannedFeature(feature)) return alert('Dieser Projektbaustein ist nicht planned und wird nicht über diesen Workflow aktualisiert.');
         if (Object.prototype.hasOwnProperty.call(payload, 'title')) {
           if (typeof payload.title !== 'string') return alert('Ungültiges title-Feld im Handoff.');
           const title = normalizeFeatureDetailText(payload.title);
@@ -9020,12 +9021,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         feature.updatedAt = new Date().toISOString();
         markFeatureDirtyRoadtrip(feature);
         save();
-        alert('Planned-Feature-Details importiert.');
+        alert('Planned-Projektbaustein-Details importiert.');
         renderView();
       }
 
       function quickCreateFeature(projectId) {
-        const title = prompt('Feature-Titel:');
+        const title = prompt('Projektbaustein-Titel:');
         if (!title) return;
         const description = prompt('Kurzbeschreibung:', '');
         S.features.push(ensureFeatureDefaults({
@@ -9089,7 +9090,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'Projektbeschreibung:',
           result.projectSummary,
           '',
-          'Erkannte Features:',
+          'Erkannte Projektbausteine:',
           ...result.features.map(f => '- ' + f)
         ].join('\n');
         if ($('analysisPromptOutput')) $('analysisPromptOutput').value = analysisText;
@@ -9166,7 +9167,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
         const prompt = [
           'SYSTEMROLLE',
-          'Du analysierst App-Code, Projektdateien oder Repository-Auszüge für eine Meta-App zur Feature- und Projektverwaltung.',
+          'Du analysierst App-Code, Projektdateien oder Repository-Auszüge für eine Meta-App zur Projektbaustein- und Projektverwaltung.',
           '',
           'AUFGABE',
           'Analysiere den folgenden Code-/Projekt-Auszug gründlich und liefere eine streng formatierte Analyse.',
@@ -9174,10 +9175,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'WAS ANALYSIERT WERDEN SOLL',
           '1. Was für eine Art App ist das?',
           '2. Was ist der wahrscheinliche Hauptzweck der App?',
-          '3. Welche Features sind im Code klar erkennbar?',
+          '3. Welche Projektbausteine sind im Code klar erkennbar?',
           '4. Welche Ansichten, Modi oder Bedienoberflächen gibt es?',
           '5. Welche technischen Module oder Integrationen sind erkennbar?',
-          '6. Welche Features wirken vollständig umgesetzt, welche nur teilweise und welche nur vorbereitet?',
+          '6. Welche Projektbausteine wirken vollständig umgesetzt, welche nur teilweise und welche nur vorbereitet?',
           '7. Welche Punkte sind unklar und müssten manuell geprüft werden?',
           '',
           'PROJEKTKONTEXT',
@@ -9198,10 +9199,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'PFLICHT',
           '- Verwende exakt diese Top-Level-Keys: appType, projectSummary, features, views, technicalNotes, unclearPoints.',
           '- "features" muss IMMER ein Array sein (auch wenn leer).',
-          '- Jedes Feature-Objekt muss enthalten: title, description, category, status.',
+          '- Jedes Projektbaustein-Objekt muss enthalten: title, description, category, status.',
           '- category darf NUR eines sein: UI, Workflow, Sync, KI, Import/Export, Darstellung, Datenmodell, Ansicht, Sonstiges.',
           '- status darf NUR eines sein: umgesetzt, teilweise umgesetzt, vorbereitet.',
-          '- Nenne bei Features nur klar im Code-/Projekt-Auszug erkennbare Hinweise, keine Spekulation.',
+          '- Nenne bei Projektbausteine nur klar im Code-/Projekt-Auszug erkennbare Hinweise, keine Spekulation.',
           '',
           'AUSGABEFORMAT JSON',
           '{',
@@ -9251,7 +9252,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '',
           'AUFGABE',
           'Erzeuge ausschließlich eine Projekt-Summary aus dem aktuellen Code-/Projekt-Auszug.',
-          'Es dürfen KEINE Features extrahiert, vorgeschlagen oder erzeugt werden.',
+          'Es dürfen KEINE Projektbausteine extrahiert, vorgeschlagen oder erzeugt werden.',
           '',
           'PROJEKTKONTEXT',
           'Titel: ' + (project.title || '—'),
@@ -9277,7 +9278,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '',
           'HINWEISE',
           '- appType möglichst passend zu einem bestehenden App-Typ wählen.',
-          '- projectSummary kurz, präzise, ohne Feature-Liste.',
+          '- projectSummary kurz, präzise, ohne Projektbaustein-Liste.',
           '- rationale in 1-2 Sätzen begründen.',
           '',
           'CODE- / PROJEKT-AUSZUG',
@@ -9324,7 +9325,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           .join('\n') || '- keine';
         return [
           'AUFGABE',
-          'Analysiere die Notiz und gleiche sie mit den bestehenden Features ab. Gib ausschließlich gültiges JSON zurück. Kein Text vor oder nach dem JSON.',
+          'Analysiere die Notiz und gleiche sie mit den bestehenden Projektbausteine ab. Gib ausschließlich gültiges JSON zurück. Kein Text vor oder nach dem JSON.',
           '',
           'PROJEKTE',
           projectSummaries || '- keine Projekte',
@@ -9506,7 +9507,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const normTitle = normalizeText(feature.title || '');
         if (normTitle) {
           const dup = getVisibleFeatures(S.features).find(f => f.projectId === project.id && normalizeText(f.title || '') === normTitle);
-          if (dup && !confirm('Ähnliches Feature existiert bereits. Trotzdem übernehmen?')) return;
+          if (dup && !confirm('Ähnliches Projektbaustein existiert bereits. Trotzdem übernehmen?')) return;
         }
         const now = new Date().toISOString();
         project.updatedAt = now;
@@ -9574,8 +9575,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         ui.importDraft.analysisPrompt = prompt;
         if (pid) ui.importDraft.projectId = pid;
         navigator.clipboard.writeText(prompt)
-          .then(() => alert('Feature-Review-Prompt erzeugt und in Zwischenablage kopiert.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'))
-          .catch(() => alert('Feature-Review-Prompt erzeugt.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'));
+          .then(() => alert('Projektbaustein-Review-Prompt erzeugt und in Zwischenablage kopiert.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'))
+          .catch(() => alert('Projektbaustein-Review-Prompt erzeugt.\nErgebnis-JSON unten einfügen und "Vorschläge laden" klicken.'));
         renderView();
       }
 
@@ -9660,7 +9661,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!proposal || proposal._done) return;
         const targetId = proposal.targetFeatureId;
         const feature = targetId ? S.features.find(x => x.id === targetId) : null;
-        if (!feature) return alert('Ziel-Feature nicht gefunden. Bitte manuell zuordnen.');
+        if (!feature) return alert('Ziel-Projektbaustein nicht gefunden. Bitte manuell zuordnen.');
         // Defensive: only update if value is non-empty and meaningfully different
         if (proposal.suggestedTitle && proposal.suggestedTitle !== feature.title) {
           if (confirm('Titel ändern von:\n"' + feature.title + '"\nauf:\n"' + proposal.suggestedTitle + '"?')) {
@@ -9717,7 +9718,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             isPlannedFeature(f) &&
             normalizeText(f.title || '') === normalizedTitle
           );
-          if (hasDup && !confirm('Ähnliches geplantes Feature existiert bereits. Trotzdem übernehmen?')) return;
+          if (hasDup && !confirm('Ähnliches geplantes Projektbaustein existiert bereits. Trotzdem übernehmen?')) return;
         }
         const now = new Date().toISOString();
         const featureId = uid('f');
@@ -9740,7 +9741,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (project) project.updatedAt = now;
         proposal._done = true;
         proposal.createdFeatureId = featureId;
-        alert('Feature wurde als geplantes Feature erstellt.\nIn Database sichtbar unter: Geplante Features');
+        alert('Projektbaustein wurde als geplanter Projektbaustein erstellt.\nIn der Projektbaustein-Datenbank sichtbar unter: Geplante Projektbausteine');
         save(); renderView();
       }
 
@@ -9757,13 +9758,13 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const st = getNoteFeaturePipelineState(projectId);
         const context = options && options.context === 'momentum' ? 'momentum' : 'project';
         const idSuffix = context + '-' + projectId;
-        if (!st.visible && !st.prompt) return `<div style="margin-top:8px;"><button class="btn btn-secondary" data-build-notes-to-features="${escapeAttr(projectId)}">Aus offenen Notizen Features ableiten</button></div>`;
-        return `<details open style="margin-top:8px;"><summary style="font-weight:700;">Raw Notes → Feature-Pipeline</summary>
+        if (!st.visible && !st.prompt) return `<div style="margin-top:8px;"><button class="btn btn-secondary" data-build-notes-to-features="${escapeAttr(projectId)}">Aus offenen Notizen Projektbausteine ableiten</button></div>`;
+        return `<details open style="margin-top:8px;"><summary style="font-weight:700;">Raw Notes → Projektbaustein-Pipeline</summary>
           <div class="field"><label for="noteFeaturePrompt-${escapeAttr(idSuffix)}">Prompt</label><textarea id="noteFeaturePrompt-${escapeAttr(idSuffix)}" data-note-feature-prompt="${escapeAttr(projectId)}" style="min-height:150px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(st.prompt || '')}</textarea><div class="stack-row" style="margin-top:6px;"><button class="btn" data-copy-note-feature-prompt="${escapeAttr(projectId)}">Copy</button></div></div>
           <div class="field"><label for="noteFeatureResult-${escapeAttr(idSuffix)}">KI-Ergebnis (JSON)</label><textarea id="noteFeatureResult-${escapeAttr(idSuffix)}" data-note-feature-result="${escapeAttr(projectId)}" style="min-height:120px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(st.resultJson || '')}</textarea></div>
-          <div class="stack-row"><button class="btn btn-primary" data-load-note-feature-proposals="${escapeAttr(projectId)}">Feature-Vorschläge laden</button></div>
+          <div class="stack-row"><button class="btn btn-primary" data-load-note-feature-proposals="${escapeAttr(projectId)}">Projektbaustein-Vorschläge laden</button></div>
           ${st.summary ? `<div class="notice" style="margin-top:6px;">${escapeHtml(st.summary)}</div>` : ''}
-          ${(st.proposals || []).length ? `<div class="list" style="margin-top:8px;">${st.proposals.map(p => `<div class="item" style="${p._done || p._ignored ? 'opacity:.65;' : ''}"><div class="row-top"><strong>${escapeHtml(p.title)}</strong><span class="pill">${escapeHtml(p.suggestedCategory)} · ${escapeHtml(p.suggestedPriority)} · ${escapeHtml(p.suggestedStatus)}</span></div><div class="item-desc">${escapeHtml(p.description || '')}</div><div class="mini">Quelle: ${(p.sourceNoteIds || []).map(id => { const n=(S.notes||[]).find(x=>x.id===id); return `${escapeHtml(id)}${n?` (${escapeHtml(shorten(n.text||'',70))})`:''}`; }).join(', ') || '—'}</div>${p.rationale ? `<div class="mini">Rationale: ${escapeHtml(p.rationale)}</div>` : ''}<div class="stack-row" style="margin-top:6px;"><button class="btn" data-accept-note-feature-proposal="${escapeAttr(projectId)}|${p._idx}" ${p._done || p._ignored ? 'disabled' : ''}>${p._done ? '✓ Übernommen' : 'Als geplantes Feature übernehmen'}</button><button class="btn" data-ignore-note-feature-proposal="${escapeAttr(projectId)}|${p._idx}" ${p._done || p._ignored ? 'disabled' : ''}>${p._ignored ? '✓ Ignoriert' : 'Nicht übernehmen'}</button></div></div>`).join('')}</div>` : ''}
+          ${(st.proposals || []).length ? `<div class="list" style="margin-top:8px;">${st.proposals.map(p => `<div class="item" style="${p._done || p._ignored ? 'opacity:.65;' : ''}"><div class="row-top"><strong>${escapeHtml(p.title)}</strong><span class="pill">${escapeHtml(p.suggestedCategory)} · ${escapeHtml(p.suggestedPriority)} · ${escapeHtml(p.suggestedStatus)}</span></div><div class="item-desc">${escapeHtml(p.description || '')}</div><div class="mini">Quelle: ${(p.sourceNoteIds || []).map(id => { const n=(S.notes||[]).find(x=>x.id===id); return `${escapeHtml(id)}${n?` (${escapeHtml(shorten(n.text||'',70))})`:''}`; }).join(', ') || '—'}</div>${p.rationale ? `<div class="mini">Rationale: ${escapeHtml(p.rationale)}</div>` : ''}<div class="stack-row" style="margin-top:6px;"><button class="btn" data-accept-note-feature-proposal="${escapeAttr(projectId)}|${p._idx}" ${p._done || p._ignored ? 'disabled' : ''}>${p._done ? '✓ Übernommen' : 'Als geplantes Projektbaustein übernehmen'}</button><button class="btn" data-ignore-note-feature-proposal="${escapeAttr(projectId)}|${p._idx}" ${p._done || p._ignored ? 'disabled' : ''}>${p._ignored ? '✓ Ignoriert' : 'Nicht übernehmen'}</button></div></div>`).join('')}</div>` : ''}
         </details>`;
       }
 
@@ -9796,8 +9797,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                     ${p.rationale ? `<div class="mini" style="color:var(--ink-dim)">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
                     ${p._done ? '<div class="mini">✓ erledigt</div>' : `
                       <div class="stack-row">
-                        ${p.type === 'new-feature' || p.type === 'unclear' ? `<button class="btn" data-review-accept-new="${p._idx}">Als neues Feature</button>` : ''}
-                        ${p.type === 'update-feature' || p.type === 'already-implemented' ? `<button class="btn" data-review-accept-update="${p._idx}">Feature aktualisieren</button>` : ''}
+                        ${p.type === 'new-feature' || p.type === 'unclear' ? `<button class="btn" data-review-accept-new="${p._idx}">Als neuen Projektbaustein</button>` : ''}
+                        ${p.type === 'update-feature' || p.type === 'already-implemented' ? `<button class="btn" data-review-accept-update="${p._idx}">Projektbaustein aktualisieren</button>` : ''}
                         <button class="btn" data-review-ignore="${p._idx}">Ignorieren</button>
                       </div>
                     `}
@@ -9911,8 +9912,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (mode === 'project-dedupe') {
           return [
             'AUFGABE',
-            'Prüfe die bestehenden Features dieses Projekts intern auf Dubletten, sehr ähnliche Features, überlappende Features, mögliche Zusammenführungen sowie veraltete oder zu allgemeine Einträge.',
-            'Es gibt keine neuen Import-Features.',
+            'Prüfe die bestehenden Projektbausteine dieses Projekts intern auf Dubletten, sehr ähnliche Projektbausteine, überlappende Projektbausteine, mögliche Zusammenführungen sowie veraltete oder zu allgemeine Einträge.',
+            'Es gibt keine neuen Import-Projektbausteine.',
             'Alle Einträge stammen bereits aus dem Projekt.',
             'Ziel ist Aufräumen per Vorschlägen, nicht Neu-Anlage.',
             'Nichts automatisch löschen.',
@@ -9929,8 +9930,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             '- Erzeuge nur Vorschläge, keine endgültigen Löschungen.',
             '- type soll primär sein: "duplicate-of" | "update-existing" | "probably-stale".',
             '- "new-feature" möglichst nicht verwenden.',
-            '- targetFeatureId ist das Feature, das behalten werden soll.',
-            '- duplicateFeatureId ist das Feature, das in den Papierkorb verschoben werden soll.',
+            '- targetFeatureId bezeichnet den Projektbaustein, das behalten werden soll.',
+            '- duplicateFeatureId bezeichnet den Projektbaustein, das in den Papierkorb verschoben werden soll.',
             '- Bei "duplicate-of" müssen targetFeatureId und duplicateFeatureId gesetzt sein, wenn es eine echte Dublette ist.',
             '- Verwende "duplicate-of" ohne duplicateFeatureId nur bei Unsicherheit; dann confidence auf "niedrig".',
             '- resolvedStatus darf nur sein: idea|planned|selected-for-sprint|in-progress|blocked|deferred',
@@ -9961,8 +9962,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const incomingList = buildIncomingListForCleanupPrompt(incomingFeatures);
         return [
           'AUFGABE',
-          'Führe ein defensives Feature-Cleanup durch. Gib ausschließlich gültiges JSON zurück (kein Markdown, kein Zusatztext).',
-          'Ziel ist Import-Cleanup: bestehende Features aktualisieren statt unnötig neu anzulegen.',
+          'Führe ein defensives Projektbaustein-Cleanup durch. Gib ausschließlich gültiges JSON zurück (kein Markdown, kein Zusatztext).',
+          'Ziel ist Import-Cleanup: bestehende Projektbausteine aktualisieren statt unnötig neu anzulegen.',
           '',
           'PROJEKT',
           '- projectId: ' + projectId,
@@ -9976,11 +9977,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           '',
           'ANWEISUNGEN',
           '- Erzeuge nur Vorschläge, keine endgültigen Löschungen.',
-          '- Erzeuge keine neuen planned Features.',
+          '- Erzeuge keine neuen geplanten Projektbausteine.',
           '- type darf nur sein: "match-existing" | "update-existing" | "new-implemented-feature" | "duplicate-of" | "probably-stale".',
-          '- Nutze new-implemented-feature nur, wenn das Feature wirklich neu im Code/Import erkannt wurde und kein passender Eintrag existiert.',
+          '- Nutze new-implemented-feature nur, wenn der Projektbaustein wirklich neu im Code/Import erkannt wurde und kein passender Eintrag existiert.',
           '- Nutze match-existing bei unverändert/bereits vorhanden.',
-          '- Nutze update-existing nur bei echter Änderung oder wenn ein planned Feature durch Codeanalyse auf umgesetzt gehoben werden soll.',
+          '- Nutze update-existing nur bei echter Änderung oder wenn ein geplanter Projektbaustein durch Materialanalyse / Gegenstands-Abgleich auf umgesetzt gehoben werden soll.',
           '- Schlage keine Updates bei identischer oder nur minimal anders formulierter Beschreibung vor.',
           '- Bei match-existing / update-existing / duplicate-of / probably-stale muss targetFeatureId gesetzt werden, wenn möglich.',
           '- duplicate-of darf nur Vorschlag sein; nichts direkt löschen.',
@@ -10036,7 +10037,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!projectId) return alert('Bitte zuerst ein Projekt auswählen.');
         let extractedJson = null;
         try { extractedJson = extractJsonObjectFromText(text); } catch (err) { extractedJson = null; }
-        if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für Cleanup wird ein JSON mit Features benötigt.');
+        if (!extractedJson) return alert('Kein Analyse-JSON erkannt. Für Cleanup wird ein JSON mit Projektbausteinen benötigt.');
         try {
           const prepared = parseAnalysisJsonForCleanup(extractedJson, projectId);
           applyProjectMetadataFromAnalysis(projectId, prepared.parsed);
@@ -10045,7 +10046,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
           if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
-          if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
+          if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Projektbausteine zurückgegeben.");
           if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
           if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
           throw err;
@@ -10059,7 +10060,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           .filter(f => f.projectId === projectId)
           .map(f => normalizeImportedFeature(f))
           .filter(Boolean);
-        if (!currentFeatures.length) return alert('Dieses Projekt hat noch keine Features für Dedupe.');
+        if (!currentFeatures.length) return alert('Dieses Projekt hat noch keine Projektbausteine für Dedupe.');
         startCleanupReview(projectId, currentFeatures, '', 'project-dedupe');
       }
 
@@ -10079,7 +10080,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           startCleanupReview(projectId, prepared.parsedFeatures, extractedJson, 'import-cleanup');
         } catch (err) {
           if (err && err.message === 'missing-features-array') return alert("Analyse-JSON erkannt, aber es enthält kein 'features'-Array.");
-          if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Features zurückgegeben.");
+          if (err && err.message === 'empty-features-array') return alert("Analyse-JSON erkannt, aber es wurden keine Projektbausteine zurückgegeben.");
           if (err && err.message === 'unsupported-top-level-structure') return alert('Analyse-JSON erkannt, aber die Top-Level-Struktur wird nicht unterstützt.');
           if (err && err.message === 'invalid-analysis-json') return alert('Kein gültiges Analyse-JSON erkannt.');
           throw err;
@@ -10288,7 +10289,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const proposal = ui.cleanupReview.proposals.find(p => p._idx === idx);
         if (!proposal || proposal._done) return;
         const feature = resolveCleanupTargetFeature(proposal);
-        if (!feature) return alert('Ziel-Feature nicht gefunden. Bitte als "neu" übernehmen oder ignorieren.');
+        if (!feature) return alert('Ziel-Projektbaustein nicht gefunden. Bitte als "neu" übernehmen oder ignorieren.');
         applyCleanupProposalToFeature(feature, proposal);
         proposal._done = true;
         save();
@@ -10333,7 +10334,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           const keepTitle = targetFeature ? targetFeature.title : (proposal.targetFeatureId || '—');
           const duplicateTitle = duplicateFeature.title || duplicateFeature.id;
           const ok = confirm(
-            'Feature als Dublette in den Papierkorb verschieben?\n' +
+            'Projektbaustein als Dublette in den Papierkorb verschieben?\n' +
             'Behalten: ' + keepTitle + '\n' +
             'Verschieben: ' + duplicateTitle
           );
@@ -10379,7 +10380,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!ui.cleanupReview.visible) return '';
         const proposals = ui.cleanupReview.proposals || [];
         const typeLabel = { 'match-existing': 'Unverändert / bereits vorhanden', 'update-existing': 'Update', 'new-implemented-feature': 'Neu', 'new-feature': 'Neu', 'duplicate-of': 'Dublette / vermutlich bereits vorhanden', 'probably-stale': 'Möglicherweise veraltet' };
-        const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Feature-Bereinigung' : 'Import-Cleanup';
+        const modeLabel = ui.cleanupReview.mode === 'project-dedupe' ? 'Projektbaustein-Bereinigung' : 'Import-Cleanup';
         const cleanupStats = proposals.reduce((acc, proposal) => {
           const normalizedType = normalizeCleanupProposalType(proposal.type, ui.cleanupReview.mode);
           if (normalizedType === 'new-feature' || normalizedType === 'new-implemented-feature') acc.newCount += 1;
@@ -10393,10 +10394,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const renderCleanupActions = (proposal, normalizedType, hasTarget, hasDuplicate) => {
           const disabledAttr = proposal._done ? ' disabled' : '';
           const primaryAction = hasTarget
-            ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehendes Feature aktualisieren</button>`
-            : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neues Feature anlegen</button>`;
+            ? `<button class="btn btn-primary" data-cleanup-accept-update="${proposal._idx}"${disabledAttr}>Bestehenden Projektbaustein aktualisieren</button>`
+            : `<button class="btn btn-primary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Als neuen Projektbaustein anlegen</button>`;
           const secondaryAction = hasTarget
-            ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neues Feature anlegen</button>`
+            ? `<button class="btn btn-secondary" data-cleanup-accept-new="${proposal._idx}"${disabledAttr}>Trotzdem als neuen Projektbaustein anlegen</button>`
             : '';
           const reviewOnlyAction = (normalizedType === 'match-existing' || normalizedType === 'probably-stale')
             ? `<button class="btn btn-secondary" data-cleanup-review-only="${proposal._idx}"${disabledAttr}>Als geprüft abhaken</button>`
@@ -10467,7 +10468,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                       <div class="mini">Confidence: ${escapeHtml(p.confidence)}</div>
                       ${p.changeSummary ? `<div class="mini">Änderung: ${escapeHtml(p.changeSummary)}</div>` : ''}
                       ${p.rationale ? `<div class="mini cleanup-review-note-muted">Grund: ${escapeHtml(p.rationale)}</div>` : ''}
-                      ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehendes Feature erkannt – kann als neues Feature übernommen werden.</div>`}
+                      ${hasTarget ? `<div class="mini">Ziel: ${escapeHtml(targetFeature.title || '—')}</div>` : `<div class="mini cleanup-review-note-info">Kein bestehender Projektbaustein erkannt – kann als neuer Projektbaustein übernommen werden.</div>`}
                       ${normalizedType === 'duplicate-of' && !hasDuplicate ? '<div class="mini cleanup-review-note-muted">Keine konkrete Dublette zugeordnet.</div>' : ''}
                       ${p._done ? `<div class="mini"><span class="pill ${statusClass}">${statusLabel}</span></div>` : ''}
                       ${renderCleanupActions(p, normalizedType, hasTarget, hasDuplicate)}
@@ -11020,7 +11021,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           ui.analysisDraftFeatures = [];
           save();
           renderView();
-          return alert(imported + ' Features übernommen.');
+          return alert(imported + ' Projektbausteine übernommen.');
         }
 
         const projectId = getImportTargetProjectId();
@@ -11059,7 +11060,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         });
         save();
         renderView();
-        alert(importedLines + ' Zeilen als Features übernommen.');
+        alert(importedLines + ' Zeilen als Projektbausteine übernommen.');
       }
 
       // ─── CHAT / SPRINT MANAGEMENT ────────────────────────────────────────────
@@ -11884,7 +11885,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Im Export enthalten:</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                 <span class="pill">Projekte: ${counts.projects}</span>
-                <span class="pill">Features: ${counts.features}</span>
+                <span class="pill">Projektbausteine: ${counts.features}</span>
                 <span class="pill">Notizen: ${counts.notes}</span>
                 <span class="pill">Analysen: ${counts.analyses}</span>
                 <span class="pill">Chats: ${counts.chats}</span>
@@ -11895,7 +11896,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               <div class="mini" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;">Aktuell lokal:</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                 <span class="pill">Projekte: ${S.projects.length}</span>
-                <span class="pill">Features: ${S.features.length}</span>
+                <span class="pill">Projektbausteine: ${S.features.length}</span>
                 <span class="pill">Notizen: ${S.notes.length}</span>
                 <span class="pill">Analysen: ${S.analyses.length}</span>
                 <span class="pill">Chats: ${S.chats.length}</span>
@@ -11909,7 +11910,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                   <input type="checkbox" id="mergeProjects" checked style="width:16px;height:16px;"> Projekte (${counts.projects})
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
-                  <input type="checkbox" id="mergeFeatures" checked style="width:16px;height:16px;"> Features (${counts.features})
+                  <input type="checkbox" id="mergeFeatures" checked style="width:16px;height:16px;"> Projektbausteine (${counts.features})
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeNotes" checked style="width:16px;height:16px;"> Notizen (${counts.notes})
@@ -12357,13 +12358,13 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!confirm('Demo-Daten laden? Das überschreibt den aktuellen Stand.')) return;
         const now = new Date().toISOString();
         const p1 = { id: uid('p'), title:'Daily Log App', type:'Daily Log', status:'aktiv', summary:'Tägliche Logs, Karten, Prompt-Weitergabe, Sync und Backup.', tags:['journaling','sync'], createdAt:now, updatedAt:now, lastHtmlImportedAt:'', lastAnalyzedAt:'' };
-        const p2 = { id: uid('p'), title:'Roadtrip', type:'Meta-App', status:'aktiv', summary:'Meta-App zum Tracken von Features, Projekten, Notizen und Analysen.', tags:['meta','tracker'], createdAt:now, updatedAt:now, lastHtmlImportedAt:'', lastAnalyzedAt:'' };
+        const p2 = { id: uid('p'), title:'Atlas HTML', type:'Meta-App', status:'aktiv', summary:'Meta-App zum Strukturieren von Projektbausteinen, Projekten, Notizen und Analysen.', tags:['meta','tracker'], createdAt:now, updatedAt:now, lastHtmlImportedAt:'', lastAnalyzedAt:'' };
         S = defaultState();
         S.projects = [p1, p2];
         S.features = [
           { id:uid('f'), projectId:p1.id, title:'Fokusmodus für Eingabefeld', description:'Vollbildmodus mit Exit per X oder ESC.', pool:'planned', reviewStatus:'needs-review', status:'planned', priority:'hoch', category:'UI', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
           { id:uid('f'), projectId:p1.id, title:'Zweiter Gist für Rohdaten-Backup', description:'Separates Gist nur für rohe Karten und Wiederherstellung.', pool:'planned', reviewStatus:'needs-review', status:'selected-for-sprint', priority:'hoch', category:'Sync', sourceType:'note-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now },
-          { id:uid('f'), projectId:p2.id, title:'HTML-Analyse für Projektstand', description:'Aktuelle index.html auslesen und Features/Status erkennen.', pool:'planned', reviewStatus:'needs-review', status:'in-progress', priority:'kritisch', category:'KI', sourceType:'manual', sourceNoteIds:[], createdAt:now, updatedAt:now },
+          { id:uid('f'), projectId:p2.id, title:'HTML-Analyse für Projektstand', description:'Aktuelle index.html auslesen und Projektbausteine/Status erkennen.', pool:'planned', reviewStatus:'needs-review', status:'in-progress', priority:'kritisch', category:'KI', sourceType:'manual', sourceNoteIds:[], createdAt:now, updatedAt:now },
           { id:uid('f'), projectId:p2.id, title:'Inbox für rohe Notizen', description:'QuickAdd ähnlich zur Daily Log App.', pool:'implemented', reviewStatus:'needs-review', status:'detected', priority:'hoch', category:'Workflow', sourceType:'html-analysis', sourceNoteIds:[], createdAt:now, updatedAt:now }
         ].map(ensureFeatureDefaults);
         S.notes = [
@@ -12942,7 +12943,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         applyFeatureDefaults(feature);
 
         if (!feature.trello || !feature.trello.cardId) {
-          if (!silent) alert('Dieses Feature hat noch keine Trello-Verknüpfung. Erst nach Trello pushen.');
+          if (!silent) alert('Dieser Projektbaustein hat noch keine Trello-Verknüpfung. Erst nach Trello pushen.');
           return { ok: false, error: 'not-linked', featureId };
         }
 
@@ -13109,7 +13110,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
           save();
           renderView();
-          if (!silent) alert('Feature nach Trello synchronisiert: ' + feature.title);
+          if (!silent) alert('Projektbaustein nach Trello synchronisiert: ' + feature.title);
         } catch (err) {
           feature.trello.syncState = 'conflict';
           feature.trello.lastSyncError = err.message;
@@ -13125,8 +13126,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const projectId = ui.editingProjectId || ui.activeProjectId;
         if (!projectId || projectId === ALL_PROJECTS_KEY) return alert('Kein konkretes Projekt ausgewählt.');
         const features = getVisibleFeatures(S.features).filter(f => f.projectId === projectId);
-        if (!features.length) return alert('Dieses Projekt hat keine Features.');
-        if (!confirm(features.length + ' Features nach Trello synchronisieren?')) return;
+        if (!features.length) return alert('Dieses Projekt hat keine Projektbausteine.');
+        if (!confirm(features.length + ' Projektbausteine nach Trello synchronisieren?')) return;
         let ok = 0;
         const failed = [];
         for (const feature of features) {
