@@ -15,15 +15,17 @@ Bestandsprüfung der `index.html` bestätigt unter anderem:
 - JSON-Import mit Ersetzen oder selektivem Merge,
 - Hauptchat-, Sprintchat- und weitere Chattypen,
 - Sprint-Start-, Sprint-Abschluss- und Handoff-Abläufe,
-- FeatureFlow-Daten mit optionaler Mermaid-Vorschau,
+- Projektbaustein-/Workflow-Flow-Daten (`featureFlow`) mit optionaler Mermaid-Vorschau,
 - eine vorhandene, verschlüsselte Gist-Sync-Grundstruktur,
 - weitere Roadtrip-Funktionen, die bis zu einer gezielten Migration erhalten
   bleiben.
 
-Die internen Bezeichner, Storage-Keys, Exportnamen und UI-Texte heißen aktuell
-an vielen Stellen weiterhin Roadtrip. Das ist in dieser Vorbereitungsphase
-beabsichtigt: Kompatibilität und Datenhaltbarkeit haben Vorrang vor einer
-vorschnellen Umbenennung.
+Die erste Atlas-HTML-Baseline stellt Branding, Navigation und zentrale sichtbare
+Begriffe auf Atlas HTML, Projektbausteine, Projektjournal sowie Materialanalyse /
+Gegenstands-Abgleich um. Interne Bezeichner, Storage-Keys, Legacy-Exportnamen und
+Sync-Verträge heißen weiterhin an vielen Stellen Roadtrip. Das ist beabsichtigt:
+Kompatibilität und Datenhaltbarkeit haben Vorrang vor einer vorschnellen
+Migration.
 
 ## Zielbild
 
