@@ -1920,7 +1920,7 @@
       const UI_SPRINT_VIS_KEY = 'atlas_html.ui.showCompletedSprintsByProject';
       const UI_MOMENTUM_COLLAPSED_KEY = 'atlas_html.ui.projectMomentumCollapsedByProject';
       const ALL_PROJECTS_KEY = 'all';
-      const VIEWS = ['overview', 'database', 'momentum', 'project', 'notes', 'learning', 'import', 'settings'];
+      const VIEWS = ['overview', 'database', 'momentum', 'project', 'notes', 'materials', 'learning', 'import', 'settings'];
       const APP_TYPES = ['Daily Log', 'Braindump', 'Review', 'Tracker', 'Writing', 'Learning', 'Meta-App', 'Sonstiges'];
       const PROJECT_STATUS = ['aktiv', 'pausiert', 'archiviert'];
       const FEATURE_CATEGORIES = ['UI', 'Workflow', 'Sync', 'KI', 'Import/Export', 'Darstellung', 'Datenmodell', 'Ansicht', 'Sonstiges'];
@@ -1977,6 +1977,8 @@
       const CHAT_STATUS = ['aktiv', 'pausiert', 'abgeschlossen', 'referenz'];
       const NOTE_TYPES = ['note', 'idea', 'bug', 'question', 'decision', 'feature-candidate'];
       const NOTE_STATUSES = ['open', 'processed', 'archived'];
+      const MATERIAL_TYPES = ['draft', 'scene-note', 'character-note', 'argument', 'essay-section', 'research', 'project-note', 'handoff', 'deep-research', 'codex-report', 'claude-briefing', 'other'];
+      const MATERIAL_STATUSES = ['inbox', 'active', 'reference', 'processed', 'archived'];
       const SPRINT_EXECUTION_MODES = { codexControl: 'codex-control', direct: 'direct' };
       const NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE = 'roadtrip-next-sprint-mainchat-handoff-v1';
 
@@ -2010,6 +2012,7 @@
         momentumQuickNoteByProject: {},
         learningTracker: { projectId: 'all', scope: 'completed', filter: 'open', search: '' },
         notesWorkspace: { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' },
+        materialsWorkspace: { projectId: 'active', type: 'all', status: 'all', search: '', editingMaterialId: '', selectedIds: [], promptOutput: '' },
         learningPromptByChatId: {},
         plannedFeatureBulkByProject: {},
         nextSprintMainchatHandoffByProject: {},
@@ -2146,6 +2149,7 @@
           projects: [],
           features: [],
           notes: [],
+          materials: [],
           analyses: [],
           chats: [],
           importVersions: [],
@@ -2319,6 +2323,7 @@
         if (!Array.isArray(S.projects)) S.projects = [];
         if (!Array.isArray(S.features)) S.features = [];
         if (!Array.isArray(S.notes)) S.notes = [];
+        if (!Array.isArray(S.materials)) S.materials = [];
         if (!Array.isArray(S.analyses)) S.analyses = [];
         if (!Array.isArray(S.chats)) S.chats = [];
         if (!Array.isArray(S.importVersions)) S.importVersions = [];
@@ -2329,6 +2334,7 @@
         S.projects = S.projects.map(ensureProjectDefaults);
         S.features = S.features.map(ensureFeatureDefaults);
         S.notes = S.notes.map(ensureNoteDefaults);
+        S.materials = S.materials.map(ensureMaterialDefaults);
         S.chats = S.chats.map(ensureChatDefaults);
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
@@ -2345,6 +2351,40 @@
         if (!['all'].concat(NOTE_TYPES).includes(ui.notesWorkspace.type)) ui.notesWorkspace.type = 'all';
         if (typeof ui.notesWorkspace.search !== 'string') ui.notesWorkspace.search = '';
         if (typeof ui.notesWorkspace.editingNoteId !== 'string') ui.notesWorkspace.editingNoteId = '';
+        if (!ui.materialsWorkspace || typeof ui.materialsWorkspace !== 'object' || Array.isArray(ui.materialsWorkspace)) ui.materialsWorkspace = { projectId: 'active', type: 'all', status: 'all', search: '', editingMaterialId: '', selectedIds: [], promptOutput: '' };
+        if (typeof ui.materialsWorkspace.projectId !== 'string') ui.materialsWorkspace.projectId = 'active';
+        if (!['all'].concat(MATERIAL_TYPES).includes(ui.materialsWorkspace.type)) ui.materialsWorkspace.type = 'all';
+        if (!['all'].concat(MATERIAL_STATUSES).includes(ui.materialsWorkspace.status)) ui.materialsWorkspace.status = 'all';
+        if (typeof ui.materialsWorkspace.search !== 'string') ui.materialsWorkspace.search = '';
+        if (typeof ui.materialsWorkspace.editingMaterialId !== 'string') ui.materialsWorkspace.editingMaterialId = '';
+        if (!Array.isArray(ui.materialsWorkspace.selectedIds)) ui.materialsWorkspace.selectedIds = [];
+        ui.materialsWorkspace.selectedIds = Array.from(new Set(ui.materialsWorkspace.selectedIds.map(id => String(id || '').trim()).filter(Boolean)));
+        if (typeof ui.materialsWorkspace.promptOutput !== 'string') ui.materialsWorkspace.promptOutput = '';
+      }
+
+      function ensureMaterialDefaults(material) {
+        const sourceMaterial = material && typeof material === 'object' && !Array.isArray(material) ? material : {};
+        const m = Object.assign({}, sourceMaterial);
+        const now = new Date().toISOString();
+        const stringValue = value => value == null ? '' : String(value);
+        const stringArray = value => Array.from(new Set((Array.isArray(value) ? value : []).map(item => String(item == null ? '' : item).trim()).filter(Boolean)));
+        m.id = stringValue(m.id).trim() || uid('m');
+        m.projectId = stringValue(m.projectId).trim();
+        m.summary = stringValue(m.summary);
+        m.content = stringValue(m.content);
+        m.source = stringValue(m.source);
+        m.sourceUrl = stringValue(m.sourceUrl);
+        m.tags = stringArray(m.tags);
+        m.linkedFeatureIds = stringArray(m.linkedFeatureIds);
+        m.linkedChatIds = stringArray(m.linkedChatIds);
+        const filename = stringValue(m.filename || m.fileName || m.name).trim();
+        const titleCandidate = stringValue(m.title).trim() || filename || m.summary.trim() || m.content.trim().split(/\r?\n/)[0].trim();
+        m.title = titleCandidate.slice(0, 180) || 'Unbenanntes Material';
+        m.type = MATERIAL_TYPES.includes(stringValue(m.type).trim()) ? stringValue(m.type).trim() : 'project-note';
+        m.status = MATERIAL_STATUSES.includes(stringValue(m.status).trim()) ? stringValue(m.status).trim() : 'inbox';
+        m.createdAt = stringValue(m.createdAt).trim() || now;
+        m.updatedAt = stringValue(m.updatedAt).trim() || m.createdAt || now;
+        return m;
       }
 
       function ensureNoteDefaults(note) {
@@ -2593,10 +2633,10 @@
       function renderNav() {
         const wrap = $('navTabs');
         wrap.innerHTML = '';
-        const labels = {overview:'Karte',database:'Projektbausteine',momentum:'Momentum',project:'Projekt',notes:'Notizen',learning:'Projektjournal',import:'Import & Analyse',settings:'Einstellungen'};
+        const labels = {overview:'Karte',database:'Projektbausteine',momentum:'Momentum',project:'Projekt',notes:'Notizen',materials:'Material',learning:'Projektjournal',import:'Import & Analyse',settings:'Einstellungen'};
         const groups = [
           { label: 'Orientierung', views: ['overview', 'project', 'momentum'] },
-          { label: 'Arbeitsraum', views: ['database', 'notes', 'learning'] },
+          { label: 'Arbeitsraum', views: ['database', 'notes', 'materials', 'learning'] },
           { label: 'Werkzeuge', views: ['import', 'settings'] }
         ];
         groups.forEach(group => {
@@ -2669,13 +2709,14 @@
         if (ui.view === 'momentum') c.innerHTML = renderMomentumDashboardView();
         if (ui.view === 'project') c.innerHTML = renderProjectWorkspace();
         if (ui.view === 'notes') c.innerHTML = renderNotesWorkspace();
+        if (ui.view === 'materials') c.innerHTML = renderMaterialsWorkspace();
         if (ui.view === 'learning') c.innerHTML = renderLearningWorkspace();
         if (ui.view === 'import') c.innerHTML = renderImportWorkspace();
         if (ui.view === 'settings') c.innerHTML = renderSettingsWorkspace();
         renderProjectSelects();
         if ($('themeSelect')) $('themeSelect').value = normalizeConfigTheme();
         if ($('fontSelect')) $('fontSelect').value = C.font;
-        $('viewTitle').textContent = ({overview:'Karte',database:'Projektbausteine',momentum:'Momentum',project:'Projekt',notes:'Notizen',learning:'Projektjournal',import:'Import & Analyse',settings:'Einstellungen'})[ui.view];
+        $('viewTitle').textContent = ({overview:'Karte',database:'Projektbausteine',momentum:'Momentum',project:'Projekt',notes:'Notizen',materials:'Material',learning:'Projektjournal',import:'Import & Analyse',settings:'Einstellungen'})[ui.view];
         wireDynamicView();
         wireDrawer();
       }
@@ -2918,6 +2959,20 @@
         qq('[data-import-dup-later]').forEach(btn => btn.addEventListener('click', () => createImportedFeatureDuplicateAsNew(btn.dataset.importDupLater || '', 'Später prüfen')));
         qq('[data-cleanup-ignore]').forEach(btn => btn.addEventListener('click', () => ignoreCleanupProposal(+btn.dataset.cleanupIgnore)));
         qq('[data-restore-feature]').forEach(btn => btn.addEventListener('click', () => restoreFeatureFromTrash(btn.dataset.restoreFeature)));
+
+        if ($('btnSaveMaterial')) $('btnSaveMaterial').addEventListener('click', saveMaterialFromForm);
+        if ($('btnClearMaterialForm')) $('btnClearMaterialForm').addEventListener('click', clearMaterialForm);
+        if ($('materialFile')) $('materialFile').addEventListener('change', importMaterialFile);
+        if ($('materialsProjectFilter')) $('materialsProjectFilter').addEventListener('change', e => { ui.materialsWorkspace.projectId = e.target.value || 'all'; renderView(); });
+        if ($('materialsTypeFilter')) $('materialsTypeFilter').addEventListener('change', e => { ui.materialsWorkspace.type = e.target.value || 'all'; renderView(); });
+        if ($('materialsStatusFilter')) $('materialsStatusFilter').addEventListener('change', e => { ui.materialsWorkspace.status = e.target.value || 'all'; renderView(); });
+        if ($('materialsSearch')) $('materialsSearch').addEventListener('input', e => { ui.materialsWorkspace.search = e.target.value || ''; renderView(); });
+        if ($('btnBuildMaterialsContext')) $('btnBuildMaterialsContext').addEventListener('click', generateMaterialsPromptContext);
+        if ($('btnCopyMaterialsContext')) $('btnCopyMaterialsContext').addEventListener('click', () => copyPrompt('materialsPromptOutput'));
+        qq('[data-edit-material]').forEach(btn => btn.addEventListener('click', () => editMaterial(btn.dataset.editMaterial || '')));
+        qq('[data-archive-material]').forEach(btn => btn.addEventListener('click', () => archiveMaterial(btn.dataset.archiveMaterial || '')));
+        qq('[data-reactivate-material]').forEach(btn => btn.addEventListener('click', () => reactivateMaterial(btn.dataset.reactivateMaterial || '')));
+        qq('[data-toggle-material-context]').forEach(btn => btn.addEventListener('click', () => toggleMaterialContext(btn.dataset.toggleMaterialContext || '')));
 
         if ($('btnAddNotesWorkspaceNote')) $('btnAddNotesWorkspaceNote').addEventListener('click', addNotesWorkspaceNote);
         if ($('notesWorkspaceProjectFilter')) $('notesWorkspaceProjectFilter').addEventListener('change', e => { ui.notesWorkspace.projectId = e.target.value || 'all'; renderView(); });
@@ -7278,6 +7333,210 @@
         `;
       }
 
+      function getMaterialsWorkspaceProjectId(value) {
+        const raw = String(value == null ? (ui.materialsWorkspace || {}).projectId || 'active' : value);
+        if (raw === 'active') return ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : 'all';
+        return raw || 'all';
+      }
+
+      function getFilteredMaterials() {
+        const st = ui.materialsWorkspace || {};
+        const projectFilter = getMaterialsWorkspaceProjectId(st.projectId);
+        const search = normalizeText(st.search || '');
+        return (S.materials || []).filter(material => {
+          const projectId = String(material.projectId || '');
+          if (projectFilter === 'none' && projectId) return false;
+          if (projectFilter !== 'all' && projectFilter !== 'none' && projectId !== projectFilter) return false;
+          if (st.type && st.type !== 'all' && material.type !== st.type) return false;
+          if (st.status && st.status !== 'all' && material.status !== st.status) return false;
+          if (search) {
+            const haystack = normalizeText([material.title, material.summary, material.content, material.source, (material.tags || []).join(' '), getProjectTitle(projectId)].join(' '));
+            if (!haystack.includes(search)) return false;
+          }
+          return true;
+        }).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+      }
+
+      function renderMaterialsWorkspace() {
+        const st = ui.materialsWorkspace || {};
+        const editing = (S.materials || []).find(material => material.id === st.editingMaterialId) || null;
+        const activeProjectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+        const formProjectId = editing ? editing.projectId : activeProjectId;
+        const materials = getFilteredMaterials();
+        const selectedIds = new Set(st.selectedIds || []);
+        const promptLength = String(st.promptOutput || '').length;
+        const projectFilterOptions = [
+          `<option value="active" ${st.projectId === 'active' ? 'selected' : ''}>Aktives Projekt${activeProjectId ? `: ${escapeHtml(getProjectTitle(activeProjectId))}` : ' (nicht gesetzt)'}</option>`,
+          `<option value="all" ${st.projectId === 'all' ? 'selected' : ''}>Alle Projekte</option>`,
+          `<option value="none" ${st.projectId === 'none' ? 'selected' : ''}>Kein Projekt</option>`
+        ].concat((S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${st.projectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`)).join('');
+        const formProjectOptions = `<option value="">— Kein Projekt —</option>` + (S.projects || []).map(project => `<option value="${escapeAttr(project.id)}" ${formProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('');
+        return `
+          <div class="materials-workspace">
+            <div class="panel-title"><h3>Material</h3><div class="mini">Lokale Markdown-/Textdokumente für Projektarbeit, Recherche, Handoffs, Codex-Berichte und Claude-Briefings.</div></div>
+            <div class="item" style="margin-bottom:16px;">
+              <div class="row-top"><h4 class="item-title">${editing ? 'Material bearbeiten' : 'Material anlegen / importieren'}</h4>${editing ? '<span class="pill">Bearbeitung</span>' : ''}</div>
+              <input type="hidden" id="materialEditingId" value="${escapeAttr(editing ? editing.id : '')}">
+              <div class="toolbar" style="align-items:end;">
+                <div class="field"><label for="materialProject">Projekt</label><select id="materialProject">${formProjectOptions}</select></div>
+                <div class="field"><label for="materialTitle">Titel</label><input id="materialTitle" value="${escapeAttr(editing ? editing.title : '')}" placeholder="Titel oder Dateiname"></div>
+                <div class="field"><label for="materialType">Typ</label><select id="materialType">${MATERIAL_TYPES.map(type => `<option value="${escapeAttr(type)}" ${(editing ? editing.type : 'project-note') === type ? 'selected' : ''}>${escapeHtml(type)}</option>`).join('')}</select></div>
+                <div class="field"><label for="materialStatus">Status</label><select id="materialStatus">${MATERIAL_STATUSES.map(status => `<option value="${escapeAttr(status)}" ${(editing ? editing.status : 'inbox') === status ? 'selected' : ''}>${escapeHtml(status)}</option>`).join('')}</select></div>
+              </div>
+              <div class="field"><label for="materialSummary">Kurzbeschreibung / Summary</label><textarea id="materialSummary" rows="3" placeholder="Worum geht es in diesem Material?">${escapeHtml(editing ? editing.summary : '')}</textarea></div>
+              <div class="toolbar">
+                <div class="field"><label for="materialSource">Quelle</label><input id="materialSource" value="${escapeAttr(editing ? editing.source : '')}" placeholder="z. B. Interview, Codex, Buch"></div>
+                <div class="field"><label for="materialSourceUrl">Quellen-URL</label><input id="materialSourceUrl" type="url" value="${escapeAttr(editing ? editing.sourceUrl : '')}" placeholder="https://..."></div>
+                <div class="field"><label for="materialTags">Tags (Kommaliste)</label><input id="materialTags" value="${escapeAttr(editing ? (editing.tags || []).join(', ') : '')}" placeholder="recherche, kapitel-1"></div>
+              </div>
+              <div class="field"><label for="materialFile">Markdown-/Textdatei lokal einlesen</label><input id="materialFile" type="file" accept=".md,.txt,text/markdown,text/plain"><div class="mini">Die Datei wird nur lokal gelesen; es wird kein File-Handle gespeichert.</div></div>
+              <div class="field"><label for="materialContent">Inhalt</label><textarea id="materialContent" rows="14" placeholder="Markdown oder Text hier einfügen ...">${escapeHtml(editing ? editing.content : '')}</textarea></div>
+              <div class="stack-row"><button id="btnSaveMaterial" class="btn btn-primary">Material speichern</button><button id="btnClearMaterialForm" class="btn">Formular leeren</button></div>
+            </div>
+
+            <div class="item" style="margin-bottom:16px;">
+              <div class="row-top"><h4 class="item-title">Filtern & Prompt-Kontext</h4><span class="pill">${materials.length} sichtbar</span></div>
+              <div class="toolbar" style="align-items:end;">
+                <div class="field"><label for="materialsProjectFilter">Projekt</label><select id="materialsProjectFilter">${projectFilterOptions}</select></div>
+                <div class="field"><label for="materialsTypeFilter">Typ</label><select id="materialsTypeFilter">${['all'].concat(MATERIAL_TYPES).map(type => `<option value="${escapeAttr(type)}" ${st.type === type ? 'selected' : ''}>${type === 'all' ? 'Alle Typen' : escapeHtml(type)}</option>`).join('')}</select></div>
+                <div class="field"><label for="materialsStatusFilter">Status</label><select id="materialsStatusFilter">${['all'].concat(MATERIAL_STATUSES).map(status => `<option value="${escapeAttr(status)}" ${st.status === status ? 'selected' : ''}>${status === 'all' ? 'Alle Status' : escapeHtml(status)}</option>`).join('')}</select></div>
+                <div class="field"><label for="materialsSearch">Suche</label><input id="materialsSearch" value="${escapeAttr(st.search || '')}" placeholder="Titel, Inhalt, Tags, Quelle ..."></div>
+              </div>
+              <div class="stack-row"><button id="btnBuildMaterialsContext" class="btn btn-primary">Kontextblock erzeugen</button><button id="btnCopyMaterialsContext" class="btn" ${st.promptOutput ? '' : 'disabled'}>Copy</button><span class="mini">${selectedIds.size} ausgewählt · ${promptLength.toLocaleString('de-DE')} Zeichen${promptLength > 50000 ? ' · Achtung: sehr großer Kontextblock' : ''}</span></div>
+              <div class="field"><label for="materialsPromptOutput">Prompt-Kontextausgabe</label><textarea id="materialsPromptOutput" rows="10" readonly placeholder="Ausgewählte Materialien erscheinen hier ...">${escapeHtml(st.promptOutput || '')}</textarea></div>
+              <div class="notice">Ohne Auswahl verwendet „Kontextblock erzeugen“ die aktuell sichtbaren Materialien; bei gesetztem aktivem Projekt werden sie zusätzlich auf dieses Projekt begrenzt.</div>
+            </div>
+
+            <div class="panel-title"><h3>Materialliste</h3><div class="mini">Vollständige Inhalte bleiben eingeklappt, damit lange Dokumente die Übersicht nicht sprengen.</div></div>
+            <div class="list">${materials.map(material => {
+              const preview = String(material.content || '').replace(/\s+/g, ' ').trim().slice(0, 280);
+              const selected = selectedIds.has(material.id);
+              return `<article class="item">
+                <div class="row-top"><h4 class="item-title">${escapeHtml(material.title)}</h4><div class="meta"><span class="pill">${escapeHtml(material.type)}</span><span class="pill">${escapeHtml(material.status)}</span></div></div>
+                <div class="meta"><span class="pill">${escapeHtml(material.projectId ? getProjectTitle(material.projectId) : 'Kein Projekt')}</span>${(material.tags || []).map(tag => `<span class="pill pill-outline">${escapeHtml(tag)}</span>`).join('')}</div>
+                ${material.summary ? `<div class="item-desc">${escapeHtml(material.summary)}</div>` : ''}
+                ${material.source || material.sourceUrl ? `<div class="mini">Quelle: ${escapeHtml(material.source || '—')}${material.sourceUrl ? ` · ${escapeHtml(material.sourceUrl)}` : ''}</div>` : ''}
+                ${preview ? `<div class="mini" style="margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(preview)}${String(material.content || '').length > 280 ? ' …' : ''}</div>` : ''}
+                ${material.content ? `<details style="margin-top:8px;"><summary>Vollständigen Inhalt lesen</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:36rem;overflow:auto;">${escapeHtml(material.content)}</pre></details>` : ''}
+                <div class="mini" style="margin-top:8px;">Aktualisiert: ${escapeHtml(formatDateTime(material.updatedAt || material.createdAt || ''))}</div>
+                <div class="stack-row">
+                  <button class="btn" data-edit-material="${escapeAttr(material.id)}">Bearbeiten</button>
+                  ${material.status === 'archived' ? `<button class="btn" data-reactivate-material="${escapeAttr(material.id)}">Reaktivieren</button>` : `<button class="btn" data-archive-material="${escapeAttr(material.id)}">Archivieren</button>`}
+                  <button class="btn ${selected ? 'btn-primary' : ''}" data-toggle-material-context="${escapeAttr(material.id)}">${selected ? 'Kontext ✓' : 'Kontext'}</button>
+                </div>
+              </article>`;
+            }).join('') || '<div class="notice">Keine Materialien passend zu den Filtern.</div>'}</div>
+          </div>`;
+      }
+
+      function saveMaterialFromForm() {
+        const editingId = String(($('materialEditingId') && $('materialEditingId').value) || '');
+        const existing = (S.materials || []).find(material => material.id === editingId);
+        const now = new Date().toISOString();
+        const draft = ensureMaterialDefaults({
+          id: existing ? existing.id : '',
+          projectId: $('materialProject') ? $('materialProject').value : '',
+          title: $('materialTitle') ? $('materialTitle').value : '',
+          type: $('materialType') ? $('materialType').value : 'project-note',
+          status: $('materialStatus') ? $('materialStatus').value : 'inbox',
+          summary: $('materialSummary') ? $('materialSummary').value : '',
+          content: $('materialContent') ? $('materialContent').value : '',
+          source: $('materialSource') ? $('materialSource').value : '',
+          sourceUrl: $('materialSourceUrl') ? $('materialSourceUrl').value : '',
+          tags: $('materialTags') ? $('materialTags').value.split(',') : [],
+          linkedFeatureIds: existing ? existing.linkedFeatureIds : [],
+          linkedChatIds: existing ? existing.linkedChatIds : [],
+          createdAt: existing ? existing.createdAt : now,
+          updatedAt: now
+        });
+        if (existing) Object.assign(existing, draft);
+        else S.materials.push(draft);
+        ui.materialsWorkspace.editingMaterialId = '';
+        save();
+        renderView();
+      }
+
+      function editMaterial(id) {
+        if (!(S.materials || []).some(material => material.id === id)) return;
+        ui.materialsWorkspace.editingMaterialId = id;
+        renderView();
+        const target = $('materialTitle');
+        if (target) target.focus();
+      }
+
+      function archiveMaterial(id) {
+        const material = (S.materials || []).find(item => item.id === id);
+        if (!material) return;
+        material.status = 'archived';
+        material.updatedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function reactivateMaterial(id) {
+        const material = (S.materials || []).find(item => item.id === id);
+        if (!material) return;
+        material.status = 'active';
+        material.updatedAt = new Date().toISOString();
+        save();
+        renderView();
+      }
+
+      function clearMaterialForm() {
+        ui.materialsWorkspace.editingMaterialId = '';
+        renderView();
+      }
+
+      function buildMaterialsPromptContext(projectId, materialIds) {
+        const ids = new Set((Array.isArray(materialIds) ? materialIds : []).map(id => String(id || '')));
+        const materials = (S.materials || []).filter(material => ids.has(material.id));
+        const safeProjectId = String(projectId || '');
+        const projectLabel = safeProjectId && safeProjectId !== 'all' && safeProjectId !== 'none' ? getProjectTitle(safeProjectId) : (safeProjectId === 'none' ? 'Kein Projekt' : 'Mehrere / alle Projekte');
+        const lines = ['=== ATLAS MATERIALKONTEXT ===', `Projekt: ${projectLabel}`, `Erzeugt: ${new Date().toISOString()}`, ''];
+        materials.forEach((material, index) => {
+          lines.push(`--- MATERIAL ${index + 1} ---`, `Titel: ${material.title}`, `Projekt: ${material.projectId ? getProjectTitle(material.projectId) : 'Kein Projekt'}`, `Typ: ${material.type}`, `Status: ${material.status}`, `Summary: ${material.summary || ''}`, `Tags: ${(material.tags || []).join(', ')}`, `Quelle: ${material.source || ''}`, `URL: ${material.sourceUrl || ''}`, '', 'Inhalt:', material.content || '', '');
+        });
+        return lines.join('\n').trimEnd();
+      }
+
+      function generateMaterialsPromptContext() {
+        const st = ui.materialsWorkspace;
+        let ids = (st.selectedIds || []).filter(id => (S.materials || []).some(material => material.id === id));
+        let contextProjectId = getMaterialsWorkspaceProjectId(st.projectId);
+        if (!ids.length) {
+          let visible = getFilteredMaterials();
+          const activeProjectId = ui.activeProjectId && ui.activeProjectId !== ALL_PROJECTS_KEY ? ui.activeProjectId : '';
+          if (activeProjectId) {
+            visible = visible.filter(material => material.projectId === activeProjectId);
+            contextProjectId = activeProjectId;
+          }
+          ids = visible.map(material => material.id);
+        }
+        if (!ids.length) return alert('Keine Materialien für den Kontextblock ausgewählt oder sichtbar.');
+        st.promptOutput = buildMaterialsPromptContext(contextProjectId, ids);
+        renderView();
+      }
+
+      function toggleMaterialContext(id) {
+        const ids = new Set(ui.materialsWorkspace.selectedIds || []);
+        if (ids.has(id)) ids.delete(id); else ids.add(id);
+        ui.materialsWorkspace.selectedIds = Array.from(ids);
+        renderView();
+      }
+
+      function importMaterialFile(e) {
+        const file = e && e.target && e.target.files ? e.target.files[0] : null;
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          if ($('materialContent')) $('materialContent').value = String(reader.result || '');
+          if ($('materialTitle') && !$('materialTitle').value.trim()) $('materialTitle').value = file.name || '';
+          if ($('materialSource') && !$('materialSource').value.trim()) $('materialSource').value = file.name || '';
+        };
+        reader.onerror = () => alert('Datei konnte nicht lokal gelesen werden.');
+        reader.readAsText(file, 'utf-8');
+      }
+
       function renderNotesWorkspace() {
         const st = ui.notesWorkspace || { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' };
         const projectOptions = [
@@ -11265,7 +11524,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function hasRoadtripStateShape(obj) {
         if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
-        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
+        const arrayKeys = ['projects', 'features', 'notes', 'materials', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
         const hasArrays = arrayKeys.some(k => Array.isArray(obj[k]));
         const hasDeletedIds = obj.deletedIds && typeof obj.deletedIds === 'object' && !Array.isArray(obj.deletedIds);
         return !!(hasArrays || hasDeletedIds);
@@ -11333,7 +11592,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function getStateLatestEntityTimestamp(state) {
         const st = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
+        const arrays = ['projects', 'features', 'notes', 'materials', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
         const fields = ['updatedAt', 'createdAt', 'importedAt', 'completedAt'];
         let newestMs = Number.NEGATIVE_INFINITY;
         arrays.forEach(key => {
@@ -11356,7 +11615,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
 
       function hasRoadtripUserData(state) {
         if (!state || typeof state !== 'object' || Array.isArray(state)) return false;
-        const arrays = ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
+        const arrays = ['projects', 'features', 'notes', 'materials', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'];
         const hasEntityData = arrays.some(k => Array.isArray(state[k]) && state[k].some(item => item && typeof item === 'object'));
         const deletedIds = state.deletedIds && typeof state.deletedIds === 'object' && !Array.isArray(state.deletedIds) ? state.deletedIds : {};
         const hasTombstones = Object.keys(deletedIds).some(id => !!deletedIds[id]);
@@ -11370,7 +11629,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function normalizeStateForSyncCompare(state) {
         const source = (state && typeof state === 'object' && !Array.isArray(state)) ? state : {};
         const normalized = {};
-        const arrayKeys = ['projects', 'features', 'notes', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
+        const arrayKeys = ['projects', 'features', 'notes', 'materials', 'chats', 'analyses', 'importVersions', 'unmatchedNotes'];
         const normalizeValue = (value) => {
           if (Array.isArray(value)) return value.map(normalizeValue);
           if (value && typeof value === 'object') {
@@ -11430,7 +11689,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const merged = JSON.parse(JSON.stringify(opts.preferRemoteWhenLocalClean ? remoteBase : localBase));
         merged.deletedIds = mergeDeletedIds(localBase.deletedIds || {}, remoteBase.deletedIds || {});
         if (opts.preferRemoteWhenLocalClean) {
-          ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(entityType => {
+          ['projects', 'features', 'notes', 'materials', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(entityType => {
             const list = Array.isArray(merged[entityType]) ? merged[entityType] : [];
             merged[entityType] = list.filter(item => item && item.id && !merged.deletedIds[item.id]);
           });
@@ -11476,7 +11735,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           merged[entityType] = Array.from(byId.values()).filter(item => item && item.id && !merged.deletedIds[item.id]);
         };
 
-        ['projects', 'features', 'notes', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(mergeEntityArray);
+        ['projects', 'features', 'notes', 'materials', 'chats', 'importVersions', 'analyses', 'unmatchedNotes'].forEach(mergeEntityArray);
         return merged;
       }
 
@@ -11815,6 +12074,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (selections.notes) {
           S.notes = mergeArrayById(S.notes, incomingState.notes || [], 'id', null);
         }
+        if (selections.materials) {
+          S.materials = mergeArrayById(S.materials || [], (incomingState.materials || []).map(ensureMaterialDefaults), 'id', null);
+        }
         if (selections.analyses) {
           S.analyses = mergeArrayById(S.analyses, incomingState.analyses || [], 'id', null);
         }
@@ -11827,6 +12089,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
         S.features = (S.features || []).filter(f => !isDeleted(f.id));
         S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
+        S.materials = (S.materials || []).filter(m => !isDeleted(m.id));
         S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
         S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
         S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
@@ -11853,10 +12116,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (!Array.isArray(normalized.projects) || !Array.isArray(normalized.features) || !Array.isArray(normalized.notes) || !Array.isArray(normalized.analyses)) {
           return null;
         }
+        if (!Array.isArray(normalized.materials)) normalized.materials = [];
         if (!Array.isArray(normalized.chats)) normalized.chats = [];
         if (!Array.isArray(normalized.importVersions)) normalized.importVersions = [];
         if (!normalized.deletedIds || typeof normalized.deletedIds !== 'object' || Array.isArray(normalized.deletedIds)) normalized.deletedIds = {};
         normalized.features = normalized.features.map(ensureFeatureDefaults);
+        normalized.materials = normalized.materials.map(ensureMaterialDefaults);
         return normalized;
       }
 
@@ -11869,6 +12134,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           projects: (normalized.projects || []).length,
           features: (normalized.features || []).length,
           notes: (normalized.notes || []).length,
+          materials: (normalized.materials || []).length,
           analyses: (normalized.analyses || []).length,
           chats: (normalized.chats || []).length,
           importVersions: (normalized.importVersions || []).length
@@ -11887,6 +12153,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Projekte: ${counts.projects}</span>
                 <span class="pill">Projektbausteine: ${counts.features}</span>
                 <span class="pill">Notizen: ${counts.notes}</span>
+                <span class="pill">Material: ${counts.materials}</span>
                 <span class="pill">Analysen: ${counts.analyses}</span>
                 <span class="pill">Chats: ${counts.chats}</span>
                 <span class="pill">Importe: ${counts.importVersions}</span>
@@ -11898,6 +12165,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 <span class="pill">Projekte: ${S.projects.length}</span>
                 <span class="pill">Projektbausteine: ${S.features.length}</span>
                 <span class="pill">Notizen: ${S.notes.length}</span>
+                <span class="pill">Material: ${(S.materials || []).length}</span>
                 <span class="pill">Analysen: ${S.analyses.length}</span>
                 <span class="pill">Chats: ${S.chats.length}</span>
                 <span class="pill">Importe: ${(S.importVersions || []).length}</span>
@@ -11914,6 +12182,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeNotes" checked style="width:16px;height:16px;"> Notizen (${counts.notes})
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
+                  <input type="checkbox" id="mergeMaterials" checked style="width:16px;height:16px;"> Material (${counts.materials})
                 </label>
                 <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:14px;letter-spacing:0;color:var(--ink);">
                   <input type="checkbox" id="mergeAnalyses" style="width:16px;height:16px;"> Analysen (${counts.analyses})
@@ -11952,11 +12223,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             projects: modal.querySelector('#mergeProjects').checked,
             features: modal.querySelector('#mergeFeatures').checked,
             notes: modal.querySelector('#mergeNotes').checked,
+            materials: modal.querySelector('#mergeMaterials').checked,
             analyses: modal.querySelector('#mergeAnalyses').checked,
             chats: modal.querySelector('#mergeChats').checked,
             importVersions: modal.querySelector('#mergeImportVersions').checked
           };
-          if (!sel.projects && !sel.features && !sel.notes && !sel.analyses && !sel.chats && !sel.importVersions) {
+          if (!sel.projects && !sel.features && !sel.notes && !sel.materials && !sel.analyses && !sel.chats && !sel.importVersions) {
             return alert('Bitte mindestens einen Bereich auswählen.');
           }
           applySelectiveMerge(_importDraftData, sel);
@@ -12041,6 +12313,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           projectCount: Array.isArray(source.projects) ? source.projects.length : 0,
           featureCount: Array.isArray(source.features) ? source.features.length : 0,
           noteCount: Array.isArray(source.notes) ? source.notes.length : 0,
+          materialCount: Array.isArray(source.materials) ? source.materials.length : 0,
           unmatchedNoteCount: Array.isArray(source.unmatchedNotes) ? source.unmatchedNotes.length : 0,
           chatCount: Array.isArray(source.chats) ? source.chats.length : 0,
           analysisCount: Array.isArray(source.analyses) ? source.analyses.length : 0,
@@ -12060,6 +12333,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             projects: Array.isArray(S.projects) ? S.projects : [],
             features: Array.isArray(S.features) ? S.features : [],
             notes: Array.isArray(S.notes) ? S.notes : [],
+            materials: Array.isArray(S.materials) ? S.materials : [],
             unmatchedNotes: Array.isArray(S.unmatchedNotes) ? S.unmatchedNotes : [],
             chats: preparedChats.clean,
             analyses: Array.isArray(S.analyses) ? S.analyses : [],
@@ -12077,6 +12351,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               projects: 'projects.json',
               features: 'features.json',
               notes: 'notes.json',
+              materials: 'materials.json',
               unmatchedNotes: 'unmatchedNotes.json',
               chats: 'chats.json',
               analyses: 'analyses.json',
@@ -12154,6 +12429,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           projects: await parseZipJsonFile(zip, 'projects.json', [], true),
           features: await parseZipJsonFile(zip, 'features.json', [], true),
           notes: await parseZipJsonFile(zip, 'notes.json', [], true),
+          materials: await parseZipJsonFile(zip, 'materials.json', [], false),
           unmatchedNotes: await parseZipJsonFile(zip, 'unmatchedNotes.json', [], true),
           chats: await parseZipJsonFile(zip, 'chats.json', [], true),
           analyses: await parseZipJsonFile(zip, 'analyses.json', [], true),
