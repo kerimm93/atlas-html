@@ -2071,7 +2071,7 @@
         projectHandoffImport: { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' },
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '' },
-        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
+        chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.direct },
         chatWorkflowByProject: {},
         chatWorkflowHandoff: { projectId: '', sourceChatId: '', rawJson: '' },
         chatWorkflowHandoffByProject: {},
@@ -3285,7 +3285,7 @@
           const projectId = ui.activeProjectId || '';
           if (!projectId || projectId === ALL_PROJECTS_KEY) return;
           const st = getChatWorkflowState(projectId);
-          st.sprintExecutionMode = Object.values(SPRINT_EXECUTION_MODES).includes(e.target.value) ? e.target.value : SPRINT_EXECUTION_MODES.codexControl;
+          st.sprintExecutionMode = Object.values(SPRINT_EXECUTION_MODES).includes(e.target.value) ? e.target.value : SPRINT_EXECUTION_MODES.direct;
           renderView();
         });
         if ($('sprintCycleStartJsonInput')) $('sprintCycleStartJsonInput').addEventListener('input', e => {
@@ -3631,8 +3631,8 @@
                 <div class="field" style="margin-bottom:0;width:100%;">
                   <label for="sprintExecutionModeSelect">Arbeitsmodus</label>
                   <select id="sprintExecutionModeSelect" style="width:100%;">
-                    <option value="${SPRINT_EXECUTION_MODES.codexControl}" ${isCodexControlMode(projectId) ? 'selected' : ''}>Codex-Steuerung</option>
                     <option value="${SPRINT_EXECUTION_MODES.direct}" ${getSprintExecutionMode(projectId) === SPRINT_EXECUTION_MODES.direct ? 'selected' : ''}>Direkte Umsetzung</option>
+                    <option value="${SPRINT_EXECUTION_MODES.codexControl}" ${isCodexControlMode(projectId) ? 'selected' : ''}>Codex-Steuerung</option>
                   </select>
                 </div>
                 <div class="stack-row" style="justify-content:flex-end;">
@@ -4040,7 +4040,7 @@ ${workMeta.nextThought || '—'}`,
 
       function getChatWorkflowState(projectId) {
         if (!projectId || projectId === ALL_PROJECTS_KEY) {
-          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl };
+          ui.chatWorkflow = { projectId: projectId || '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.direct };
           ui.chatWorkflowHandoff = { projectId: projectId || '', sourceChatId: '', rawJson: '' };
           return ui.chatWorkflow;
         }
@@ -4048,13 +4048,13 @@ ${workMeta.nextThought || '—'}`,
         const existingState = ui.chatWorkflowByProject[projectId];
         const state = (existingState && typeof existingState === 'object')
           ? existingState
-          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl };
+          : { projectId, sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.direct };
         state.projectId = projectId;
         if (typeof state.sprintStartPrompt !== 'string') state.sprintStartPrompt = '';
         if (typeof state.sprintHandoffPrompt !== 'string') state.sprintHandoffPrompt = '';
         if (typeof state.sprintStartJson !== 'string') state.sprintStartJson = '';
         if (typeof state.mainChatBootstrapJson !== 'string') state.mainChatBootstrapJson = '';
-        if (!Object.values(SPRINT_EXECUTION_MODES).includes(state.sprintExecutionMode)) state.sprintExecutionMode = SPRINT_EXECUTION_MODES.codexControl;
+        if (!Object.values(SPRINT_EXECUTION_MODES).includes(state.sprintExecutionMode)) state.sprintExecutionMode = SPRINT_EXECUTION_MODES.direct;
         ui.chatWorkflowByProject[projectId] = state;
         ui.chatWorkflow = state;
         const sourceChats = getProjectSourceChats(projectId);
@@ -5192,7 +5192,7 @@ ${workMeta.nextThought || '—'}`,
       function getSprintExecutionMode(projectId) {
         const state = getChatWorkflowState(projectId);
         const mode = state && state.sprintExecutionMode;
-        return Object.values(SPRINT_EXECUTION_MODES).includes(mode) ? mode : SPRINT_EXECUTION_MODES.codexControl;
+        return Object.values(SPRINT_EXECUTION_MODES).includes(mode) ? mode : SPRINT_EXECUTION_MODES.direct;
       }
 
       function isCodexControlMode(projectId) {
