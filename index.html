@@ -6691,6 +6691,18 @@ ${workMeta.nextThought || '—'}`,
             updatedAt: now
           }));
         });
+        handoff.openQuestions.forEach(question => {
+          S.notes.push(ensureNoteDefaults({
+            id: uid('n'),
+            projectId: project.id,
+            text: question,
+            type: 'question',
+            status: 'open',
+            processed: false,
+            createdAt: now,
+            updatedAt: now
+          }));
+        });
         project.updatedAt = now;
         ui.activeProjectId = project.id;
         ui.editingProjectId = project.id;
@@ -6748,7 +6760,7 @@ ${workMeta.nextThought || '—'}`,
                   <div class="mini"><strong>Chat-Rolle:</strong> ${escapeHtml(handoff.sourceChat.role)}</div>
                   <div class="mini"><strong>Chat-Titel:</strong> ${escapeHtml(handoff.sourceChat.title || '—')}</div>
                   ${handoff.sourceChat.url ? `<div class="mini"><strong>Chat-URL:</strong> ${escapeHtml(handoff.sourceChat.url)}</div>` : ''}
-                  <div class="mini"><strong>Umfang:</strong> ${handoff.proposedFeatures.length} Projektbausteine · ${handoff.notes.length} Notizen · ${handoff.openQuestions.length} offene Fragen</div>
+                  <div class="mini"><strong>Umfang:</strong> ${handoff.proposedFeatures.length} Projektbausteine · ${handoff.notes.length} Notizen · ${handoff.openQuestions.length} offene Fragen als Question-Notes</div>
                   ${similarTitles.length ? `<div class="mini" style="margin-top:6px;color:var(--yellow);"><strong>Warnung:</strong> Ähnlicher Projekttitel vorhanden: ${escapeHtml(similarTitles.join(', '))}. Es wird trotzdem ein neues Projekt angelegt; nichts wird überschrieben.</div>` : ''}
                 </div>
                 <button class="btn btn-primary" id="btnImportProjectHandoff" style="margin-top:10px;">Projekt aus Handoff anlegen</button>
