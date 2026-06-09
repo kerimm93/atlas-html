@@ -2062,6 +2062,7 @@
         showKanban: false,
         showAllProjects: false,
         projectEditMode: false,
+        projectHandoffImport: { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' },
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.codexControl },
@@ -2914,6 +2915,49 @@
         if ($('trelloBoardId')) $('trelloBoardId').addEventListener('input', e => { C.trelloBoardId = e.target.value; save(); });
         if ($('btnTestTrello')) $('btnTestTrello').addEventListener('click', testTrelloConnection);
         if ($('btnSaveProject')) $('btnSaveProject').addEventListener('click', saveProjectFromForm);
+        if ($('btnBuildProjectContextDraftPrompt')) $('btnBuildProjectContextDraftPrompt').addEventListener('click', () => {
+          const state = getProjectHandoffImportState();
+          state.promptDraft = buildProjectContextDraftPrompt();
+          state.summary = '';
+          state.error = '';
+          renderView();
+        });
+        if ($('btnCopyProjectContextDraftPrompt')) $('btnCopyProjectContextDraftPrompt').addEventListener('click', () => copyPrompt('projectContextDraftPromptOutput'));
+        if ($('btnBuildProjectHandoffJsonPrompt')) $('btnBuildProjectHandoffJsonPrompt').addEventListener('click', () => {
+          const state = getProjectHandoffImportState();
+          state.jsonPrompt = buildProjectHandoffJsonPrompt();
+          state.summary = '';
+          state.error = '';
+          renderView();
+        });
+        if ($('btnCopyProjectHandoffJsonPrompt')) $('btnCopyProjectHandoffJsonPrompt').addEventListener('click', () => copyPrompt('projectHandoffJsonPromptOutput'));
+        if ($('projectHandoffRawJson')) $('projectHandoffRawJson').addEventListener('input', e => {
+          const state = getProjectHandoffImportState();
+          state.rawJson = e.target.value;
+          state.preview = null;
+          state.summary = '';
+          state.error = '';
+          const importButton = $('btnImportProjectHandoff');
+          if (importButton) importButton.disabled = true;
+        });
+        if ($('btnPreviewProjectHandoff')) $('btnPreviewProjectHandoff').addEventListener('click', () => {
+          const state = getProjectHandoffImportState();
+          try {
+            state.preview = previewAtlasProjectHandoff(state.rawJson);
+            state.error = '';
+            state.summary = 'Handoff ist gültig. Bitte Vorschau prüfen und den Import ausdrücklich bestätigen.';
+          } catch (error) {
+            state.preview = null;
+            state.summary = '';
+            state.error = error.message || 'Das Handoff konnte nicht geprüft werden.';
+          }
+          renderView();
+        });
+        if ($('btnImportProjectHandoff')) $('btnImportProjectHandoff').addEventListener('click', importAtlasProjectHandoff);
+        if ($('btnResetProjectHandoffImport')) $('btnResetProjectHandoffImport').addEventListener('click', () => {
+          ui.projectHandoffImport = { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' };
+          renderView();
+        });
         if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
         if ($('btnResetProjectForm')) $('btnResetProjectForm').addEventListener('click', () => {
           ui.projectEditMode = false;
@@ -6412,6 +6456,320 @@ ${workMeta.nextThought || '—'}`,
         ].join('\n');
       }
 
+      function getProjectHandoffImportState() {
+        const defaults = { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' };
+        if (!ui.projectHandoffImport || typeof ui.projectHandoffImport !== 'object' || Array.isArray(ui.projectHandoffImport)) {
+          ui.projectHandoffImport = Object.assign({}, defaults);
+        } else {
+          ui.projectHandoffImport = Object.assign(defaults, ui.projectHandoffImport);
+        }
+        return ui.projectHandoffImport;
+      }
+
+      function buildProjectContextDraftPrompt() {
+        return [
+          'Du bist ein bestehender GPT-/Claude-Projektchat. Verdichte deinen bisherigen Kontext für die Übernahme in Atlas Web.',
+          '',
+          'Erstelle einen lesbaren Projektkontext-Entwurf und gliedere ihn in diese Abschnitte:',
+          '1. Was ist das Projekt? Erkläre es in 5–10 Sätzen.',
+          '2. Zweck und konkreter Nutzen.',
+          '3. Projektart (z. B. Writing, Learning, Tracker, Meta-App oder Sonstiges).',
+          '4. Aktueller Stand, wichtige Entscheidungen und vorhandene Ergebnisse.',
+          '5. Mögliche erste Arbeitsfäden oder Sprints.',
+          '6. Mögliche geplante Projektbausteine.',
+          '7. Offene Fragen.',
+          '8. Empfehlung für die Rolle dieses Chats:',
+          '   - project-main, wenn dieser Chat als langfristiger Hauptchat taugt',
+          '   - sprint, wenn dieser Chat eher ein spezifischer Arbeitsfaden oder Sprint ist',
+          '   - none, wenn kein Chatdatensatz übernommen werden soll',
+          '',
+          'Wichtig: Gib jetzt noch kein JSON aus. Formuliere verständlich, markiere Unsicherheiten und warte danach auf meine Korrekturen, bevor ein Handoff erzeugt wird.'
+        ].join('\n');
+      }
+
+      function buildProjectHandoffJsonPrompt() {
+        return [
+          'Erzeuge auf Basis des von mir korrigierten Projektkontexts ausschließlich valides JSON für Atlas Web.',
+          'Vertrag: atlas-project-handoff-v1',
+          '',
+          'Regeln:',
+          '- Nur gültiges JSON ausgeben; keine Markdown-Codefences und keinen Erklärtext davor oder danach.',
+          '- project.title und project.summary müssen gefüllt sein.',
+          '- Unklare optionale Textfelder leer lassen und unklare Auswahlwerte konservativ setzen.',
+          '- sourceChat.role muss project-main, sprint oder none sein.',
+          '- proposedFeatures enthält nur echte geplante Projektbausteine; keine implemented Features.',
+          '- notes enthält nur relevante Projektgedächtnis-Notizen.',
+          '- openQuestions ist ein Array aus Strings.',
+          '',
+          'Nutze exakt diese Struktur:',
+          '{',
+          '  "type": "atlas-project-handoff-v1",',
+          '  "project": {',
+          '    "title": "",',
+          '    "summary": "",',
+          '    "appType": "Sonstiges",',
+          '    "status": "aktiv",',
+          '    "currentFocus": "",',
+          '    "nextStep": ""',
+          '  },',
+          '  "sourceChat": {',
+          '    "role": "none",',
+          '    "title": "",',
+          '    "url": "",',
+          '    "summary": "",',
+          '    "nextStep": ""',
+          '  },',
+          '  "proposedFeatures": [',
+          '    { "title": "", "description": "", "category": "Workflow", "priority": "mittel", "status": "planned" }',
+          '  ],',
+          '  "notes": [',
+          '    { "text": "", "type": "note" }',
+          '  ],',
+          '  "openQuestions": []',
+          '}'
+        ].join('\n');
+      }
+
+      function normalizeAtlasProjectHandoffRole(role) {
+        const normalized = normalizeText(role);
+        return ['project-main', 'sprint', 'none'].includes(normalized) ? normalized : 'none';
+      }
+
+      function normalizeAtlasProjectStatus(status) {
+        const normalized = normalizeText(status);
+        return PROJECT_STATUS.find(item => normalizeText(item) === normalized) || 'aktiv';
+      }
+
+      function normalizeAtlasProjectType(typeOrAppType) {
+        const normalized = normalizeText(typeOrAppType);
+        return APP_TYPES.find(item => normalizeText(item) === normalized) || 'Sonstiges';
+      }
+
+      function normalizeAtlasFeatureCategory(category) {
+        const normalized = normalizeText(category);
+        return FEATURE_CATEGORIES.find(item => normalizeText(item) === normalized) || 'Sonstiges';
+      }
+
+      function normalizeAtlasFeaturePriority(priority) {
+        const normalized = normalizeText(priority);
+        return PRIORITIES.find(item => normalizeText(item) === normalized) || 'mittel';
+      }
+
+      function findSimilarProjectTitles(title) {
+        const normalizedTitle = normalizeText(title);
+        if (!normalizedTitle) return [];
+        return S.projects.filter(project => {
+          const existing = normalizeText(project.title);
+          return existing && (existing === normalizedTitle || existing.includes(normalizedTitle) || normalizedTitle.includes(existing));
+        }).map(project => project.title);
+      }
+
+      function parseAtlasProjectHandoffJson(raw) {
+        const text = String(raw || '').trim();
+        if (!text) throw new Error('Bitte zuerst ein JSON-Handoff einfügen.');
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch (error) {
+          throw new Error('Das Handoff ist kein gültiges JSON: ' + error.message);
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Das Handoff muss ein JSON-Objekt sein.');
+        if (parsed.type !== 'atlas-project-handoff-v1') throw new Error('Ungültiger Handoff-Typ. Erwartet wird exakt „atlas-project-handoff-v1“.');
+        const inputProject = parsed.project && typeof parsed.project === 'object' && !Array.isArray(parsed.project) ? parsed.project : {};
+        const title = typeof inputProject.title === 'string' ? inputProject.title.trim() : '';
+        const summary = typeof inputProject.summary === 'string' ? inputProject.summary.trim() : '';
+        if (!title) throw new Error('project.title ist erforderlich und darf nicht leer sein.');
+        if (!summary) throw new Error('project.summary ist erforderlich und darf nicht leer sein.');
+        const inputChat = parsed.sourceChat && typeof parsed.sourceChat === 'object' && !Array.isArray(parsed.sourceChat) ? parsed.sourceChat : {};
+        const optionalString = value => typeof value === 'string' ? value.trim() : '';
+        const proposedFeatures = (Array.isArray(parsed.proposedFeatures) ? parsed.proposedFeatures : [])
+          .filter(item => item && typeof item === 'object' && !Array.isArray(item) && optionalString(item.title))
+          .map(item => ({
+            title: optionalString(item.title),
+            description: optionalString(item.description),
+            category: normalizeAtlasFeatureCategory(item.category),
+            priority: normalizeAtlasFeaturePriority(item.priority),
+            pool: 'planned',
+            status: 'planned'
+          }));
+        const notes = (Array.isArray(parsed.notes) ? parsed.notes : [])
+          .filter(item => item && typeof item === 'object' && !Array.isArray(item) && optionalString(item.text))
+          .map(item => {
+            const type = optionalString(item.type);
+            return { text: optionalString(item.text), type: NOTE_TYPES.includes(type) ? type : 'note', status: 'open', processed: false };
+          });
+        const openQuestions = (Array.isArray(parsed.openQuestions) ? parsed.openQuestions : [])
+          .filter(item => typeof item === 'string' && item.trim())
+          .map(item => item.trim());
+        return {
+          type: 'atlas-project-handoff-v1',
+          project: {
+            title,
+            summary,
+            appType: normalizeAtlasProjectType(inputProject.appType),
+            status: normalizeAtlasProjectStatus(inputProject.status),
+            currentFocus: optionalString(inputProject.currentFocus),
+            nextStep: optionalString(inputProject.nextStep)
+          },
+          sourceChat: {
+            role: normalizeAtlasProjectHandoffRole(inputChat.role),
+            title: optionalString(inputChat.title),
+            url: optionalString(inputChat.url),
+            summary: optionalString(inputChat.summary),
+            nextStep: optionalString(inputChat.nextStep)
+          },
+          proposedFeatures,
+          notes,
+          openQuestions
+        };
+      }
+
+      function previewAtlasProjectHandoff(raw) {
+        const handoff = parseAtlasProjectHandoffJson(raw);
+        return { handoff, similarProjectTitles: findSimilarProjectTitles(handoff.project.title) };
+      }
+
+      function importAtlasProjectHandoff() {
+        const state = getProjectHandoffImportState();
+        if (!state.preview || !state.preview.handoff) return;
+        const handoff = state.preview.handoff;
+        const now = new Date().toISOString();
+        const project = createProjectFromData({
+          title: handoff.project.title,
+          summary: handoff.project.summary,
+          type: handoff.project.appType,
+          status: handoff.project.status,
+          currentFocus: handoff.project.currentFocus,
+          nextStep: handoff.project.nextStep
+        });
+        if (handoff.sourceChat.role !== 'none') {
+          const isMainChat = handoff.sourceChat.role === 'project-main';
+          const chat = ensureChatDefaults({
+            id: uid('ch'),
+            projectId: project.id,
+            title: handoff.sourceChat.title || `${project.title} — ${isMainChat ? 'Hauptchat' : 'Arbeitsfaden'}`,
+            type: isMainChat ? 'project-main' : 'sprint',
+            status: isMainChat ? 'aktiv' : 'referenz',
+            url: handoff.sourceChat.url,
+            summary: handoff.sourceChat.summary,
+            nextStep: handoff.sourceChat.nextStep,
+            mainChatId: isMainChat ? '' : project.mainChatId,
+            startedAt: now,
+            updatedAt: now
+          });
+          if (isMainChat) {
+            chat.mainChatId = chat.id;
+            project.mainChatId = chat.id;
+            project.mainChatUrl = handoff.sourceChat.url || '';
+          }
+          S.chats.push(chat);
+        }
+        handoff.proposedFeatures.forEach(feature => {
+          S.features.push(ensureFeatureDefaults({
+            id: uid('f'),
+            projectId: project.id,
+            title: feature.title,
+            description: feature.description,
+            category: feature.category,
+            priority: feature.priority,
+            pool: 'planned',
+            status: 'planned',
+            sourceType: 'chat-handoff',
+            createdAt: now,
+            updatedAt: now
+          }));
+        });
+        handoff.notes.forEach(note => {
+          S.notes.push(ensureNoteDefaults({
+            id: uid('n'),
+            projectId: project.id,
+            text: note.text,
+            type: note.type,
+            status: 'open',
+            processed: false,
+            createdAt: now,
+            updatedAt: now
+          }));
+        });
+        handoff.openQuestions.forEach(question => {
+          S.notes.push(ensureNoteDefaults({
+            id: uid('n'),
+            projectId: project.id,
+            text: question,
+            type: 'question',
+            status: 'open',
+            processed: false,
+            createdAt: now,
+            updatedAt: now
+          }));
+        });
+        project.updatedAt = now;
+        ui.activeProjectId = project.id;
+        ui.editingProjectId = project.id;
+        ui.projectEditMode = false;
+        if (ui.importDraft && typeof ui.importDraft === 'object') ui.importDraft.projectId = project.id;
+        state.rawJson = '';
+        state.preview = null;
+        state.error = '';
+        state.summary = `Projekt „${project.title}“ wurde aus dem Handoff angelegt.`;
+        save();
+        renderSidebarProjects();
+        renderProjectSelects();
+        renderView();
+      }
+
+      function renderProjectHandoffImportSection() {
+        const state = getProjectHandoffImportState();
+        const preview = state.preview;
+        const handoff = preview && preview.handoff;
+        const similarTitles = preview && Array.isArray(preview.similarProjectTitles) ? preview.similarProjectTitles : [];
+        const keepOpen = !!(state.promptDraft || state.jsonPrompt || state.rawJson || state.preview || state.summary || state.error);
+        return `
+          <details id="projectHandoffImportSection" style="margin:12px 0 14px;" ${keepOpen ? 'open' : ''}>
+            <summary style="font-weight:700;">Projekt aus Chat übernehmen</summary>
+            <div style="margin-top:10px;">
+              <p class="mini">Erzeuge zuerst einen lesbaren Kontext-Prompt. Importiert wird erst nach JSON-Prüfung, Vorschau und ausdrücklicher Bestätigung.</p>
+              <div class="field">
+                <label for="projectContextDraftPromptOutput">1. Projektkontext-Entwurf</label>
+                <div class="stack-row"><button class="btn" id="btnBuildProjectContextDraftPrompt">Projektkontext-Prompt erzeugen</button><button class="btn btn-ghost" id="btnCopyProjectContextDraftPrompt" ${state.promptDraft ? '' : 'disabled'}>Kopieren</button></div>
+                <textarea id="projectContextDraftPromptOutput" rows="10" readonly>${escapeHtml(state.promptDraft)}</textarea>
+              </div>
+              <div class="field">
+                <label for="projectHandoffJsonPromptOutput">2. JSON-Handoff-Prompt</label>
+                <div class="stack-row"><button class="btn" id="btnBuildProjectHandoffJsonPrompt">JSON-Handoff-Prompt erzeugen</button><button class="btn btn-ghost" id="btnCopyProjectHandoffJsonPrompt" ${state.jsonPrompt ? '' : 'disabled'}>Kopieren</button></div>
+                <textarea id="projectHandoffJsonPromptOutput" rows="12" readonly>${escapeHtml(state.jsonPrompt)}</textarea>
+              </div>
+              <div class="field">
+                <label for="projectHandoffRawJson">3. JSON-Handoff einfügen</label>
+                <textarea id="projectHandoffRawJson" rows="12" placeholder="{ &quot;type&quot;: &quot;atlas-project-handoff-v1&quot;, ... }">${escapeHtml(state.rawJson)}</textarea>
+              </div>
+              <div class="stack-row">
+                <button class="btn btn-primary" id="btnPreviewProjectHandoff">Handoff prüfen</button>
+                <button class="btn btn-ghost" id="btnResetProjectHandoffImport">Zurücksetzen</button>
+              </div>
+              ${state.error ? `<div class="notice" style="margin-top:10px;border-color:var(--red);color:var(--red);">${escapeHtml(state.error)}</div>` : ''}
+              ${state.summary ? `<div class="notice" style="margin-top:10px;">${escapeHtml(state.summary)}</div>` : ''}
+              ${handoff ? `
+                <div class="notice" style="margin-top:10px;">
+                  <strong>Vorschau</strong>
+                  <div class="mini" style="margin-top:6px;"><strong>Projekt:</strong> ${escapeHtml(handoff.project.title)}</div>
+                  <div class="mini"><strong>Summary:</strong> ${escapeHtml(handoff.project.summary)}</div>
+                  <div class="mini"><strong>Typ / Status:</strong> ${escapeHtml(handoff.project.appType)} · ${escapeHtml(handoff.project.status)}</div>
+                  <div class="mini"><strong>Aktueller Fokus:</strong> ${escapeHtml(handoff.project.currentFocus || '—')}</div>
+                  <div class="mini"><strong>Nächster Schritt:</strong> ${escapeHtml(handoff.project.nextStep || '—')}</div>
+                  <div class="mini"><strong>Chat-Rolle:</strong> ${escapeHtml(handoff.sourceChat.role)}</div>
+                  <div class="mini"><strong>Chat-Titel:</strong> ${escapeHtml(handoff.sourceChat.title || '—')}</div>
+                  ${handoff.sourceChat.url ? `<div class="mini"><strong>Chat-URL:</strong> ${escapeHtml(handoff.sourceChat.url)}</div>` : ''}
+                  <div class="mini"><strong>Umfang:</strong> ${handoff.proposedFeatures.length} Projektbausteine · ${handoff.notes.length} Notizen · ${handoff.openQuestions.length} offene Fragen als Question-Notes</div>
+                  ${similarTitles.length ? `<div class="mini" style="margin-top:6px;color:var(--yellow);"><strong>Warnung:</strong> Ähnlicher Projekttitel vorhanden: ${escapeHtml(similarTitles.join(', '))}. Es wird trotzdem ein neues Projekt angelegt; nichts wird überschrieben.</div>` : ''}
+                </div>
+                <button class="btn btn-primary" id="btnImportProjectHandoff" style="margin-top:10px;">Projekt aus Handoff anlegen</button>
+              ` : '<button class="btn btn-primary" id="btnImportProjectHandoff" style="margin-top:10px;" disabled>Projekt aus Handoff anlegen</button>'}
+            </div>
+          </details>
+        `;
+      }
+
       function renderProjectWorkspace() {
         // ── Empty state ──────────────────────────────────────────────────────
         if (ui.activeProjectId === ALL_PROJECTS_KEY || !S.projects.length) {
@@ -6421,6 +6779,7 @@ ${workMeta.nextThought || '—'}`,
             <div class="stack-row" style="margin-top:10px;">
               <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
             </div>
+            ${renderProjectHandoffImportSection()}
             <div style="margin-top:12px;">
               ${renderDailyLogQuerySection()}
               ${renderMultiProjectNotesImportSection()}
@@ -6522,6 +6881,7 @@ ${workMeta.nextThought || '—'}`,
             </div>
           </header>
 
+          ${renderProjectHandoffImportSection()}
           ${renderSprintQuickDock(p.id, { disableStart: !projectMainChat })}
 
           <div class="workspace-status-strip">
@@ -10990,6 +11350,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         else if (textareaId === 'dailyLogProjectPromptOutput') {
           if (!ui.dailyLogQuery) ui.dailyLogQuery = { prompt: '' };
           ui.dailyLogQuery.prompt = text;
+        }
+        else if (['projectContextDraftPromptOutput', 'projectHandoffJsonPromptOutput'].includes(textareaId)) {
+          // The project handoff prompt state is already updated by its generator.
         }
         else ui.importDraft.prompt = text;
         navigator.clipboard.writeText(text)
