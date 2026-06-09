@@ -72,6 +72,15 @@ const stringEncodedResult = api.parseNextSprintMainchatHandoffJson(JSON.stringif
 assert.equal(stringEncodedResult.parsed.type, atlasType);
 assert.equal(stringEncodedResult.acceptedLegacyType, false);
 
+const atlasJson = JSON.stringify(handoff(atlasType));
+const trailingTextResult = api.parseNextSprintMainchatHandoffJson(atlasJson + '\nWeitere Hinweise zum nächsten Sprint.');
+assert.equal(trailingTextResult.parsed.type, atlasType);
+assert.equal(trailingTextResult.extractedJson, atlasJson);
+
+const trailingFenceResult = api.parseNextSprintMainchatHandoffJson(atlasJson + '\n```');
+assert.equal(trailingFenceResult.parsed.type, atlasType);
+assert.equal(trailingFenceResult.extractedJson, atlasJson);
+
 assert.throws(
   () => api.parseNextSprintMainchatHandoffJson(`{"type":"${atlasType}","recommendedSprint":{},("featureUpdates":[]}`),
   error => error.message.includes('Ungültiges JSON.')

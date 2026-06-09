@@ -9038,15 +9038,12 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         try {
           parsed = JSON.parse(text);
         } catch (initialError) {
-          if (text.startsWith('{') || text.startsWith('[')) {
-            throw new Error(formatNextSprintMainchatJsonSyntaxError(initialError, text));
-          }
           try {
             extractedJson = extractJsonObjectFromText(text);
+            if (text.startsWith('{') && !text.startsWith(extractedJson)) throw new Error('nested-json-fragment');
             parsed = JSON.parse(extractedJson);
-          } catch (extractedError) {
-            const parseError = extractedError && extractedError.name === 'SyntaxError' ? extractedError : initialError;
-            throw new Error(formatNextSprintMainchatJsonSyntaxError(parseError, extractedJson || text));
+          } catch (_) {
+            throw new Error(formatNextSprintMainchatJsonSyntaxError(initialError, text));
           }
         }
         if (typeof parsed === 'string') {
