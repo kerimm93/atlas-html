@@ -2047,7 +2047,13 @@
       const MATERIAL_TYPES = ['draft', 'scene-note', 'character-note', 'argument', 'essay-section', 'research', 'project-note', 'handoff', 'deep-research', 'codex-report', 'claude-briefing', 'other'];
       const MATERIAL_STATUSES = ['inbox', 'active', 'reference', 'processed', 'archived'];
       const SPRINT_EXECUTION_MODES = { codexControl: 'codex-control', direct: 'direct' };
-      const NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE = 'roadtrip-next-sprint-mainchat-handoff-v1';
+      const ATLAS_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE = 'atlas-next-sprint-mainchat-handoff-v1';
+      const LEGACY_ROADTRIP_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE = 'roadtrip-next-sprint-mainchat-handoff-v1';
+      const NEXT_SPRINT_MAINCHAT_HANDOFF_TYPES = [
+        ATLAS_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE,
+        LEGACY_ROADTRIP_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE
+      ];
+      const NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE = ATLAS_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE;
 
       let S = defaultState();
       let C = defaultConfig();
@@ -3676,7 +3682,7 @@
             <details style="margin-top:10px;" ${keepNextSprintMainchatDetailsOpen ? 'open' : ''}>
               <summary>Optional · Hauptchat vor Sprintstart abgleichen</summary>
               <div class="field" style="margin-top:8px;">
-                <label for="nextSprintMainchatPromptOutput">Next-Sprint-/Hauptchat-Handoff-Prompt</label>
+                <label for="nextSprintMainchatPromptOutput">Atlas Next-Sprint-/Hauptchat-Handoff-Prompt</label>
                 <div class="mini" style="margin-bottom:6px;">Optionaler Abgleich: geplante Projektbausteine, neue Kandidaten und nächsten Sprint vom project-main Hauptchat als JSON-Handoff zurückholen.</div>
                 <textarea id="nextSprintMainchatPromptOutput" style="min-height:150px;font-family:var(--font-mono);font-size:12px;" placeholder="Prompt wird hier erzeugt ...">${escapeHtml(nextSprintMainchatHandoff.prompt || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
@@ -3685,10 +3691,10 @@
                 </div>
               </div>
               <div class="field" style="margin-top:8px;">
-                <label for="nextSprintMainchatJsonInput">Next-Sprint-Handoff JSON importieren</label>
-                <textarea id="nextSprintMainchatJsonInput" style="min-height:120px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"roadtrip-next-sprint-mainchat-handoff-v1","recommendedSprint":{},"featureUpdates":[],"proposedFeatures":[]}'>${escapeHtml(nextSprintMainchatHandoff.rawJson || '')}</textarea>
+                <label for="nextSprintMainchatJsonInput">Atlas Next-Sprint-Handoff JSON importieren</label>
+                <textarea id="nextSprintMainchatJsonInput" style="min-height:120px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"atlas-next-sprint-mainchat-handoff-v1","recommendedSprint":{},"featureUpdates":[],"proposedFeatures":[]}'>${escapeHtml(nextSprintMainchatHandoff.rawJson || '')}</textarea>
                 <div class="stack-row" style="margin-top:6px;">
-                  <button class="btn btn-primary" type="button" id="btnImportNextSprintMainchatHandoff" ${isArchivedProject ? 'disabled' : ''}>Next-Sprint-Handoff importieren</button>
+                  <button class="btn btn-primary" type="button" id="btnImportNextSprintMainchatHandoff" ${isArchivedProject ? 'disabled' : ''}>Atlas Next-Sprint-Handoff importieren</button>
                 </div>
               </div>
               ${nextSprintMainchatHandoff.summary ? `<div class="notice notice-info" style="margin-top:8px;white-space:pre-wrap;">${escapeHtml(nextSprintMainchatHandoff.summary)}</div>` : ''}
@@ -5399,6 +5405,7 @@ ${workMeta.nextThought || '—'}`,
           '',
           'Wichtig: Gib ausschließlich gültiges JSON zurück. Keine Markdown-Codefences, keine Einleitung, keine Kommentare.',
           `Der JSON-type muss exakt "${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}" sein.`,
+          `Atlas akzeptiert aus Kompatibilitätsgründen auch ältere Handoffs mit "${LEGACY_ROADTRIP_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}"; neue Handoffs sollen aber "${ATLAS_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}" verwenden.`,
           'Verwende in featureUpdates nur bestehende IDs geplanter Projektbausteine aus Atlas HTML.',
           'Aktualisiere keine abgeschlossenen / entwickelten Projektbausteine. Neue Ideen gehören ausschließlich nach proposedFeatures.',
           ...getFeatureFlowPromptContractLines(),
@@ -9015,19 +9022,52 @@ Gib ausschließlich gültiges JSON zurück: kein Markdown, keine Code-Fences, ke
         return changed;
       }
 
+      function formatNextSprintMainchatJsonSyntaxError(error, sourceText) {
+        const parserDetail = error && error.message ? ` Parserfehler: ${error.message}` : '';
+        const featureUpdatesHint = /}\s*,\s*\(\s*["']featureUpdates/.test(String(sourceText || ''))
+          ? ' Hinweis: Vor einem Feldnamen darf keine öffnende Klammer stehen. Gemeint ist wahrscheinlich },"featureUpdates" statt },("featureUpdates".'
+          : '';
+        return `Ungültiges JSON. Prüfe fehlende oder überzählige Klammern, Kommas oder Anführungszeichen.${parserDetail}${featureUpdatesHint}`;
+      }
+
       function parseNextSprintMainchatHandoffJson(rawJson) {
         const text = String(rawJson || '').trim();
-        if (!text) throw new Error('empty-json');
+        if (!text) throw new Error('Bitte füge ein JSON-Handoff ein.');
         let extractedJson = text;
         let parsed;
-        try { parsed = JSON.parse(text); }
-        catch (_) {
-          extractedJson = extractJsonObjectFromText(text);
-          parsed = JSON.parse(extractedJson);
+        try {
+          parsed = JSON.parse(text);
+        } catch (initialError) {
+          try {
+            extractedJson = extractJsonObjectFromText(text);
+            if (text.startsWith('{') && !text.startsWith(extractedJson)) throw new Error('nested-json-fragment');
+            parsed = JSON.parse(extractedJson);
+          } catch (_) {
+            throw new Error(formatNextSprintMainchatJsonSyntaxError(initialError, text));
+          }
         }
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid-object');
-        if (parsed.type !== NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE) throw new Error('invalid-type');
-        return { parsed, extractedJson };
+        if (typeof parsed === 'string') {
+          const nestedJson = parsed.trim();
+          try {
+            parsed = JSON.parse(nestedJson);
+            extractedJson = nestedJson;
+          } catch (error) {
+            const parserDetail = error && error.message ? ` Parserfehler: ${error.message}` : '';
+            throw new Error(`Das Handoff scheint als JSON-String eingefügt worden zu sein. Bitte ohne äußere Anführungszeichen einfügen.${parserDetail}`);
+          }
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('Das Handoff muss ein JSON-Objekt sein.');
+        }
+        if (!NEXT_SPRINT_MAINCHAT_HANDOFF_TYPES.includes(parsed.type)) {
+          const foundType = Object.prototype.hasOwnProperty.call(parsed, 'type') ? JSON.stringify(parsed.type) : '(fehlt)';
+          throw new Error(`Ungültiger Handoff-Typ. Gefunden: ${foundType}. Erwartet: "${ATLAS_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}" oder Legacy-Alias "${LEGACY_ROADTRIP_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}".`);
+        }
+        return {
+          parsed,
+          extractedJson,
+          acceptedLegacyType: parsed.type === LEGACY_ROADTRIP_NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE
+        };
       }
 
       function mergeNextSprintMainchatFeatureUpdate(feature, update) {
@@ -9533,7 +9573,7 @@ ${previousSourceContext}`);
         ].filter(Boolean).join('\n');
       }
 
-      function formatNextSprintMainchatHandoffImportSummary(report, label = 'Next-Sprint-Handoff Import') {
+      function formatNextSprintMainchatHandoffImportSummary(report, label = 'Atlas Next-Sprint-Handoff Import') {
         const createdCount = Array.isArray(report.created) ? report.created.length : (report.created || 0);
         const updatedCount = Array.isArray(report.updated) ? report.updated.length : (report.updated || 0);
         const duplicateCount = Array.isArray(report.skippedDuplicates) ? report.skippedDuplicates.length : 0;
@@ -9549,7 +9589,7 @@ ${previousSourceContext}`);
 
       function importNextSprintMainchatHandoff(projectId, rawJson, options = {}) {
         const state = options.targetState || getNextSprintMainchatHandoffState(projectId);
-        const importLabel = options.label || 'Next-Sprint-Handoff Import';
+        const importLabel = options.label || 'Atlas Next-Sprint-Handoff Import';
         const applyRecommendedSprint = options.applyRecommendedSprint !== false;
         const duplicateSourceLabel = options.duplicateSourceLabel || 'Next-Sprint-/Hauptchat-Handoff';
         const sourceType = options.sourceType || 'next-sprint-mainchat-handoff';
@@ -9576,7 +9616,7 @@ ${previousSourceContext}`);
         let result;
         try { result = parseNextSprintMainchatHandoffJson(rawJson); }
         catch (err) {
-          const reason = err && err.message === 'invalid-type' ? `falscher type; erwartet ${NEXT_SPRINT_MAINCHAT_HANDOFF_TYPE}` : 'ungültiges JSON: ' + (err && err.message ? err.message : err);
+          const reason = err && err.message ? err.message : String(err);
           report.errors.push(reason);
           report.reasons.push(reason);
           state.summary = formatNextSprintMainchatHandoffImportSummary(report, importLabel);
@@ -9585,6 +9625,7 @@ ${previousSourceContext}`);
           return report;
         }
         const payload = result.parsed;
+        if (result.acceptedLegacyType) report.reasons.push('Legacy-Roadtrip-Typ akzeptiert.');
         const now = new Date().toISOString();
         importFeatureDatabaseCarryover(projectId, payload, report, {
           now,
