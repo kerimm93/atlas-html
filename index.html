@@ -2078,7 +2078,7 @@
         projectMomentumPromptByProject: {},
         momentumSort: 'updated',
         momentumQuickNoteByProject: {},
-        learningTracker: { projectId: 'all', scope: 'completed', filter: 'open', search: '' },
+        learningTracker: { projectId: 'all', scope: 'active', filter: 'all', search: '' },
         notesWorkspace: { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' },
         materialsWorkspace: { projectId: 'active', type: 'all', status: 'all', search: '', editingMaterialId: '', selectedIds: [], promptOutput: '' },
         learningPromptByChatId: {},
@@ -2407,10 +2407,12 @@
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
         if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
-        if (!ui.learningTracker || typeof ui.learningTracker !== 'object') ui.learningTracker = { projectId: 'all', scope: 'completed', filter: 'open', search: '' };
+        if (!ui.learningTracker || typeof ui.learningTracker !== 'object') ui.learningTracker = { projectId: 'all', scope: 'active', filter: 'all', search: '' };
         if (!ui.learningTracker.projectId) ui.learningTracker.projectId = 'all';
-        if (!ui.learningTracker.scope) ui.learningTracker.scope = 'completed';
-        if (!ui.learningTracker.filter) ui.learningTracker.filter = 'open';
+        if (!['active', 'completed', 'reference', 'all'].includes(ui.learningTracker.scope)) {
+          ui.learningTracker.scope = ui.learningTracker.scope === 'completed' ? 'completed' : 'active';
+        }
+        ui.learningTracker.filter = 'all';
         if (typeof ui.learningTracker.search !== 'string') ui.learningTracker.search = '';
         if (!ui.learningPromptByChatId || typeof ui.learningPromptByChatId !== 'object') ui.learningPromptByChatId = {};
         if (!ui.notesWorkspace || typeof ui.notesWorkspace !== 'object') ui.notesWorkspace = { projectId: 'all', status: 'open', type: 'all', search: '', editingNoteId: '' };
@@ -2830,9 +2832,23 @@
         if (kanbanToggle) kanbanToggle.addEventListener('change', e => { ui.showKanban = e.target.checked; renderView(); });
         if (allProjectsToggle) allProjectsToggle.addEventListener('change', e => { ui.showAllProjects = e.target.checked; renderView(); });
         if ($('learningProjectFilter')) $('learningProjectFilter').addEventListener('change', e => { ui.learningTracker.projectId = e.target.value || 'all'; renderView(); });
-        if ($('learningScopeFilter')) $('learningScopeFilter').addEventListener('change', e => { ui.learningTracker.scope = e.target.value || 'completed'; renderView(); });
-        if ($('learningStatusFilter')) $('learningStatusFilter').addEventListener('change', e => { ui.learningTracker.filter = e.target.value || 'open'; renderView(); });
+        if ($('learningScopeFilter')) $('learningScopeFilter').addEventListener('change', e => { ui.learningTracker.scope = e.target.value || 'active'; renderView(); });
         if ($('learningSearch')) $('learningSearch').addEventListener('input', e => { ui.learningTracker.search = e.target.value || ''; renderView(); });
+        qq('[data-work-meta]').forEach(el => el.addEventListener('change', e => {
+          const [chatId, key] = String(e.target.dataset.workMeta || '').split('|');
+          if (!chatId || !key) return;
+          updateChatWorkMeta(chatId, { [key]: String(e.target.value || '') });
+        }));
+        qq('[data-build-continuation-prompt]').forEach(el => el.addEventListener('click', e => {
+          const chatId = String(e.currentTarget.dataset.buildContinuationPrompt || '');
+          if (!chatId) return;
+          buildChatContinuationPrompt(chatId);
+        }));
+        qq('[data-copy-continuation-prompt]').forEach(el => el.addEventListener('click', e => {
+          const chatId = String(e.currentTarget.dataset.copyContinuationPrompt || '');
+          if (!chatId) return;
+          copyPrompt(`continuationPromptOutput-${chatId}`);
+        }));
         qq('[data-learning-toggle]').forEach(el => el.addEventListener('change', e => {
           const [chatId, key] = String(e.target.dataset.learningToggle || '').split('|');
           if (!chatId || !key) return;
@@ -3760,31 +3776,103 @@
         return [meta.learningsExtracted, meta.ankiCreated, meta.notionDevDbUpdated, meta.reviewed].filter(v => !v).length;
       }
 
+      function getChatWorkMeta(chat) {
+        return ensureChatDefaults(chat).workMeta;
+      }
+
       function getLearningTrackerChats() {
-        const tracker = ui.learningTracker || { projectId: 'all', scope: 'completed', filter: 'open', search: '' };
-        const isCompleted = (chat) => chat.status === 'abgeschlossen' || !!chat.completedAt;
+        const tracker = ui.learningTracker || { projectId: 'all', scope: 'active', filter: 'all', search: '' };
         return (S.chats || [])
           .map(ensureChatDefaults)
-          .filter(chat => tracker.scope === 'all' ? true : isCompleted(chat))
           .filter(chat => tracker.projectId === 'all' ? true : chat.projectId === tracker.projectId)
           .filter(chat => {
-            if (tracker.filter === 'all') return true;
-            const meta = getChatLearningMeta(chat);
-            if (tracker.filter === 'open') return !isChatLearningDone(chat);
-            if (tracker.filter === 'anki-open') return !meta.ankiCreated;
-            if (tracker.filter === 'learnings-open') return !meta.learningsExtracted;
-            if (tracker.filter === 'devdb-open') return !meta.notionDevDbUpdated;
-            if (tracker.filter === 'done') return isChatLearningDone(chat);
-            return true;
+            if (tracker.scope === 'all') return true;
+            if (tracker.scope === 'completed') return chat.status === 'abgeschlossen';
+            if (tracker.scope === 'reference') return chat.status === 'referenz';
+            return chat.status === 'aktiv' || chat.status === 'pausiert';
           })
           .filter(chat => {
             const qText = normalizeText(tracker.search || '');
             if (!qText) return true;
             const project = S.projects.find(p => p.id === chat.projectId);
-            const blob = normalizeText([project ? project.title : '', chat.title, chat.summary].join(' '));
+            const workMeta = getChatWorkMeta(chat);
+            const blob = normalizeText([
+              project ? project.title : '',
+              chat.title,
+              chat.summary,
+              chat.nextStep,
+              workMeta.insights,
+              workMeta.followQuestions,
+              workMeta.decisions,
+              workMeta.nextThought,
+              workMeta.continuationPrompt
+            ].join(' '));
             return blob.includes(qText);
           })
-          .sort((a, b) => String(b.completedAt || b.handoffImportedAt || b.updatedAt || b.startedAt || '').localeCompare(String(a.completedAt || a.handoffImportedAt || a.updatedAt || a.startedAt || '')));
+          .sort((a, b) => String(b.updatedAt || b.completedAt || b.handoffImportedAt || b.startedAt || '').localeCompare(String(a.updatedAt || a.completedAt || a.handoffImportedAt || a.startedAt || '')));
+      }
+
+      function updateChatWorkMeta(chatId, patch) {
+        const idx = (S.chats || []).findIndex(c => c && c.id === chatId);
+        if (idx < 0) return;
+        const chat = ensureChatDefaults(S.chats[idx]);
+        chat.workMeta = Object.assign({}, chat.workMeta, patch || {});
+        ['insights', 'followQuestions', 'decisions', 'nextThought', 'continuationPrompt'].forEach(key => {
+          chat.workMeta[key] = String(chat.workMeta[key] || '');
+        });
+        ['linkedMaterialIds', 'linkedNoteIds', 'linkedFeatureIds'].forEach(key => {
+          chat.workMeta[key] = Array.isArray(chat.workMeta[key]) ? chat.workMeta[key].map(value => String(value || '').trim()).filter(Boolean) : [];
+        });
+        chat.updatedAt = new Date().toISOString();
+        S.chats[idx] = chat;
+        save();
+        renderView();
+      }
+
+      function buildChatContinuationPrompt(chatId) {
+        const sourceChat = (S.chats || []).find(c => c && c.id === chatId);
+        if (!sourceChat) return '';
+        const chat = ensureChatDefaults(sourceChat);
+        const project = S.projects.find(p => p.id === chat.projectId) || {};
+        const workMeta = getChatWorkMeta(chat);
+        const prompt = [
+          'Setze diesen Atlas-Arbeitsfaden an der aktuellen Stelle fort.',
+          '',
+          '## Projektkontext',
+          `- Projekttitel: ${project.title || '—'}`,
+          `- Projektsummary: ${project.summary || '—'}`,
+          `- Aktueller Fokus: ${project.currentFocus || '—'}`,
+          `- Nächster Projektschritt: ${project.nextStep || '—'}`,
+          '',
+          '## Arbeitsfaden-Kontext',
+          `- Titel: ${chat.title || '—'}`,
+          `- Typ: ${chat.type || '—'}`,
+          `- Status: ${chat.status || '—'}`,
+          `- URL: ${chat.url || '—'}`,
+          `- Summary: ${chat.summary || '—'}`,
+          `- Next Step: ${chat.nextStep || '—'}`,
+          '',
+          '## Arbeitsfaden-Metadaten',
+          `### Erkenntnisse
+${workMeta.insights || '—'}`,
+          '',
+          `### Folgefragen
+${workMeta.followQuestions || '—'}`,
+          '',
+          `### Entscheidungen
+${workMeta.decisions || '—'}`,
+          '',
+          `### Nächster Denkzug
+${workMeta.nextThought || '—'}`,
+          '',
+          '## Arbeitsauftrag',
+          '- Führe das Gespräch an dieser Stelle fort und fange nicht neu an.',
+          '- Respektiere die vorhandenen Entscheidungen und den bisherigen Kontext.',
+          '- Arbeite zuerst mit dem nächsten Denkzug weiter.',
+          '- Kläre offene Fragen bei Bedarf nacheinander statt gleichzeitig.'
+        ].join('\n');
+        updateChatWorkMeta(chatId, { continuationPrompt: prompt });
+        return prompt;
       }
 
       function updateChatLearningMeta(chatId, patch) {
@@ -6722,84 +6810,89 @@
       }
 
       function renderLearningWorkspace() {
-        const tracker = ui.learningTracker || { projectId: 'all', scope: 'completed', filter: 'open', search: '' };
-        const activeProjects = (S.projects || []).filter(p => p && p.status !== 'archiviert');
-        const allChats = getLearningTrackerChats();
-        const totalOpen = allChats.reduce((sum, c) => sum + getChatLearningOpenCount(c), 0);
-        const learningsOpen = allChats.filter(c => !getChatLearningMeta(c).learningsExtracted).length;
-        const ankiOpen = allChats.filter(c => !getChatLearningMeta(c).ankiCreated).length;
-        const devDbOpen = allChats.filter(c => !getChatLearningMeta(c).notionDevDbUpdated).length;
-        const reviewedDone = allChats.filter(c => getChatLearningMeta(c).reviewed).length;
+        const tracker = ui.learningTracker || { projectId: 'all', scope: 'active', filter: 'all', search: '' };
+        const projects = (S.projects || []).filter(Boolean).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'de'));
+        const workThreads = getLearningTrackerChats();
+        const activeCount = workThreads.filter(chat => chat.status === 'aktiv' || chat.status === 'pausiert').length;
+        const completedCount = workThreads.filter(chat => chat.status === 'abgeschlossen').length;
+        const referenceCount = workThreads.filter(chat => chat.status === 'referenz').length;
         const renderType = (type) => `<span class="pill" style="border-color:${({ 'project-main':'var(--accent)','sprint':'var(--blue)','execution':'var(--green)','branch':'var(--yellow)' }[type]||'var(--border)')};color:${({ 'project-main':'var(--accent)','sprint':'var(--blue)','execution':'var(--green)','branch':'var(--yellow)' }[type]||'var(--ink-dim)')}">${escapeHtml(type||'—')}</span>`;
         const renderStatus = (status) => `<span class="pill" style="color:${({ 'aktiv':'var(--green)','pausiert':'var(--yellow)','abgeschlossen':'var(--ink-dim)','referenz':'var(--blue)' }[status]||'var(--ink-dim)')}">${escapeHtml(status||'—')}</span>`;
+        const renderWorkField = (chat, key, label, placeholder, minHeight = 80) => {
+          const value = getChatWorkMeta(chat)[key] || '';
+          return `<div class="field">
+            <label>${label}</label>
+            <textarea ${key === 'continuationPrompt' ? `id="continuationPromptOutput-${chat.id}"` : ''} data-work-meta="${chat.id}|${key}" placeholder="${escapeAttr(placeholder)}" style="min-height:${minHeight}px;">${escapeHtml(value)}</textarea>
+          </div>`;
+        };
         return `
           ${renderContextBanner()}
           <div class="panel">
-            <div class="panel-title"><h3>Projektjournal / Lern-Tracker</h3></div>
-            <div class="notice">Abgeschlossene Chats/Sprints nachbereiten: Learnings, Anki, Dev-/Notion-DB.</div>
+            <div class="panel-title"><h3>Projektjournal / Arbeitsfäden</h3></div>
+            <div class="notice">Arbeitsfäden bündeln Denk-, Schreib-, Recherche-, Reflexions- und Projektgespräche pro Projekt. Sie halten Summary, Folgefragen, Entscheidungen, Materialien, Notizen und Fortsetzungsprompts zusammen.</div>
             <div class="stack-row" style="margin-top:10px;">
-              <span class="pill">Offene Nachbereitungen: ${totalOpen}</span>
-              <span class="pill">Learnings offen: ${learningsOpen}</span>
-              <span class="pill">Anki offen: ${ankiOpen}</span>
-              <span class="pill">Dev-/Notion-DB offen: ${devDbOpen}</span>
-              <span class="pill pill-success">Review erledigt: ${reviewedDone}</span>
+              <span class="pill">Arbeitsfäden im Filter: ${workThreads.length}</span>
+              <span class="pill">Aktiv &amp; pausiert: ${activeCount}</span>
+              <span class="pill">Abgeschlossen: ${completedCount}</span>
+              <span class="pill">Referenz: ${referenceCount}</span>
             </div>
             <div class="stack-row" style="margin-top:10px;">
               <select id="learningProjectFilter">
                 <option value="all" ${tracker.projectId==='all'?'selected':''}>Alle Projekte</option>
-                ${activeProjects.map(p => `<option value="${escapeAttr(p.id)}" ${tracker.projectId===p.id?'selected':''}>${escapeHtml(p.title)}</option>`).join('')}
+                ${projects.map(project => `<option value="${escapeAttr(project.id)}" ${tracker.projectId===project.id?'selected':''}>${escapeHtml(project.title || 'Ohne Titel')}</option>`).join('')}
               </select>
               <select id="learningScopeFilter">
-                <option value="completed" ${tracker.scope==='completed'?'selected':''}>Nur abgeschlossene</option>
-                <option value="all" ${tracker.scope==='all'?'selected':''}>Alle Chats</option>
+                <option value="active" ${tracker.scope==='active'?'selected':''}>Aktive &amp; offene</option>
+                <option value="all" ${tracker.scope==='all'?'selected':''}>Alle Arbeitsfäden</option>
+                <option value="completed" ${tracker.scope==='completed'?'selected':''}>Abgeschlossene</option>
+                <option value="reference" ${tracker.scope==='reference'?'selected':''}>Referenz</option>
               </select>
-              <select id="learningStatusFilter">
-                <option value="open" ${tracker.filter==='open'?'selected':''}>Offen</option>
-                <option value="learnings-open" ${tracker.filter==='learnings-open'?'selected':''}>Learnings offen</option>
-                <option value="anki-open" ${tracker.filter==='anki-open'?'selected':''}>Anki offen</option>
-                <option value="devdb-open" ${tracker.filter==='devdb-open'?'selected':''}>Dev-DB offen</option>
-                <option value="done" ${tracker.filter==='done'?'selected':''}>Erledigt</option>
-                <option value="all" ${tracker.filter==='all'?'selected':''}>Alle</option>
-              </select>
-              <input id="learningSearch" value="${escapeAttr(tracker.search || '')}" placeholder="Suche über Projekt, Titel, Summary" />
+              <input id="learningSearch" value="${escapeAttr(tracker.search || '')}" placeholder="Suche in Projekt, Arbeitsfaden und Arbeitsgedächtnis" />
             </div>
             <div class="list" style="margin-top:10px;">
-              ${allChats.map(c => {
-                const p = S.projects.find(x => x.id === c.projectId) || null;
-                const meta = getChatLearningMeta(c);
-                const prompt = (ui.learningPromptByChatId || {})[c.id] || '';
+              ${workThreads.map(chat => {
+                const project = S.projects.find(item => item.id === chat.projectId) || null;
+                const workMeta = getChatWorkMeta(chat);
+                const learningMeta = getChatLearningMeta(chat);
                 return `<div class="item">
                   <div class="row-top">
-                    <strong>${escapeHtml(c.title || 'Ohne Titel')}</strong>
-                    <div class="stack-row" style="gap:4px;">${renderType(c.type)}${renderStatus(c.status)}</div>
+                    <strong>${escapeHtml(chat.title || 'Ohne Titel')}</strong>
+                    <div class="stack-row" style="gap:4px;">${renderType(chat.type)}${renderStatus(chat.status)}</div>
                   </div>
-                  <div class="mini">${escapeHtml((p && p.title) || 'Ohne Projekt')}</div>
+                  <div class="mini">Projekt: ${escapeHtml((project && project.title) || 'Ohne Projekt')} · Aktualisiert: ${escapeHtml(chat.updatedAt || '—')}</div>
                   <div class="stack-row">
-                    ${c.url ? `<a href="${escapeAttr(c.url)}" target="_blank" rel="noopener" class="btn">URL öffnen</a>` : ''}
-                    ${p ? `<button class="btn" data-open-learning-project="${p.id}">Projekt öffnen</button>` : ''}
-                    <span class="pill">${isChatLearningDone(c) ? 'Learning erledigt' : `Learning offen (${getChatLearningOpenCount(c)})`}</span>
+                    ${chat.url ? `<a href="${escapeAttr(chat.url)}" target="_blank" rel="noopener" class="btn">URL öffnen</a>` : ''}
+                    ${project ? `<button class="btn" data-open-learning-project="${project.id}">Projekt öffnen</button>` : ''}
                   </div>
-                  <div class="mini">Abgeschlossen: ${escapeHtml(c.completedAt || c.handoffImportedAt || '')} · Updated: ${escapeHtml(c.updatedAt || '')}</div>
-                  ${c.summary ? `<div class="item-desc">${escapeHtml(c.summary)}</div>` : ''}
-                  ${c.nextStep ? `<div class="mini">Next Step: ${escapeHtml(c.nextStep)}</div>` : ''}
-                  ${c.rawReportText ? `<div class="pill">Raw Report vorhanden</div>` : ''}
-                  <div class="stack-row" style="margin-top:8px;">
-                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|learningsExtracted" ${meta.learningsExtracted ? 'checked' : ''}/> Learnings extrahiert</label>
-                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|ankiCreated" ${meta.ankiCreated ? 'checked' : ''}/> Anki erstellt</label>
-                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|notionDevDbUpdated" ${meta.notionDevDbUpdated ? 'checked' : ''}/> Dev-/Notion-DB gepflegt</label>
-                    <label class="pill"><input type="checkbox" data-learning-toggle="${c.id}|reviewed" ${meta.reviewed ? 'checked' : ''}/> Review erledigt</label>
-                  </div>
-                  <div class="field" style="margin-top:8px;">
-                    <label>Learning-Notizen</label>
-                    <textarea data-learning-notes="${c.id}" placeholder="Optionale Learning-Notizen">${escapeHtml(meta.notes || '')}</textarea>
+                  ${chat.summary ? `<div class="item-desc"><strong>Summary:</strong> ${escapeHtml(chat.summary)}</div>` : '<div class="mini">Noch keine Summary hinterlegt.</div>'}
+                  ${chat.nextStep ? `<div class="mini"><strong>Next Step:</strong> ${escapeHtml(chat.nextStep)}</div>` : ''}
+                  <div style="margin-top:10px;">
+                    ${renderWorkField(chat, 'insights', 'Erkenntnisse', 'Was ist in diesem Arbeitsfaden klarer geworden?')}
+                    ${renderWorkField(chat, 'followQuestions', 'Folgefragen', 'Welche Fragen sollen als Nächstes geklärt werden?')}
+                    ${renderWorkField(chat, 'decisions', 'Entscheidungen', 'Welche Entscheidungen sollen für die Fortsetzung gelten?')}
+                    ${renderWorkField(chat, 'nextThought', 'Nächster Denkzug', 'Womit soll das Gespräch konkret weitergehen?')}
+                    ${renderWorkField(chat, 'continuationPrompt', 'Fortsetzungsprompt', 'Prompt manuell formulieren oder aus dem Kontext erzeugen.', 160)}
                   </div>
                   <div class="stack-row">
-                    <button class="btn" data-build-learning-prompt="${c.id}">Learning-Prompt bauen</button>
-                    ${prompt ? `<button class="btn" data-copy-learning-prompt="${c.id}">Prompt kopieren</button>` : ''}
+                    <button class="btn" data-build-continuation-prompt="${chat.id}">Fortsetzungsprompt erzeugen</button>
+                    ${workMeta.continuationPrompt ? `<button class="btn" data-copy-continuation-prompt="${chat.id}">Fortsetzungsprompt kopieren</button>` : ''}
                   </div>
-                  ${prompt ? `<textarea id="learningPromptOutput-${c.id}" style="margin-top:8px;min-height:180px;">${escapeHtml(prompt)}</textarea>` : ''}
+                  <details style="margin-top:10px;">
+                    <summary>Legacy-Learning / Dev-Nachbereitung</summary>
+                    <div class="stack-row" style="margin-top:8px;">
+                      <label class="pill"><input type="checkbox" data-learning-toggle="${chat.id}|learningsExtracted" ${learningMeta.learningsExtracted ? 'checked' : ''}/> Learnings extrahiert</label>
+                      <label class="pill"><input type="checkbox" data-learning-toggle="${chat.id}|ankiCreated" ${learningMeta.ankiCreated ? 'checked' : ''}/> Anki erstellt</label>
+                      <label class="pill"><input type="checkbox" data-learning-toggle="${chat.id}|notionDevDbUpdated" ${learningMeta.notionDevDbUpdated ? 'checked' : ''}/> Dev-/Notion-DB gepflegt</label>
+                      <label class="pill"><input type="checkbox" data-learning-toggle="${chat.id}|reviewed" ${learningMeta.reviewed ? 'checked' : ''}/> Review erledigt</label>
+                    </div>
+                    <div class="field" style="margin-top:8px;">
+                      <label>Legacy-Learning-Notizen</label>
+                      <textarea data-learning-notes="${chat.id}" placeholder="Optionale Learning-Notizen">${escapeHtml(learningMeta.notes || '')}</textarea>
+                    </div>
+                    <div class="mini">${isChatLearningDone(chat) ? 'Legacy-Nachbereitung erledigt' : `Legacy-Nachbereitung offen (${getChatLearningOpenCount(chat)})`}</div>
+                  </details>
                 </div>`;
-              }).join('') || '<div class="notice">Keine Chats für den gewählten Filter gefunden.</div>'}
+              }).join('') || '<div class="notice">Keine Arbeitsfäden für den gewählten Filter gefunden.</div>'}
             </div>
           </div>
         `;
@@ -12822,7 +12915,8 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           updatedAt: new Date().toISOString(),
           completedAt: '',
           workMode: '',
-          learningMeta: {}
+          learningMeta: {},
+          workMeta: {}
         }, input);
         clone.knownContext = Array.isArray(clone.knownContext) ? clone.knownContext.map(x => String(x || '').trim()).filter(Boolean) : [];
         clone.recentWork = Array.isArray(clone.recentWork) ? clone.recentWork.map(x => String(x || '').trim()).filter(Boolean) : [];
@@ -12841,6 +12935,22 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         clone.learningMeta.notionDevDbUpdated = !!clone.learningMeta.notionDevDbUpdated;
         clone.learningMeta.reviewed = !!clone.learningMeta.reviewed;
         clone.learningMeta.notes = String(clone.learningMeta.notes || '');
+        clone.workMeta = Object.assign({
+          insights: '',
+          followQuestions: '',
+          decisions: '',
+          nextThought: '',
+          continuationPrompt: '',
+          linkedMaterialIds: [],
+          linkedNoteIds: [],
+          linkedFeatureIds: []
+        }, input.workMeta && typeof input.workMeta === 'object' && !Array.isArray(input.workMeta) ? input.workMeta : {});
+        ['insights', 'followQuestions', 'decisions', 'nextThought', 'continuationPrompt'].forEach(key => {
+          clone.workMeta[key] = String(clone.workMeta[key] || '');
+        });
+        ['linkedMaterialIds', 'linkedNoteIds', 'linkedFeatureIds'].forEach(key => {
+          clone.workMeta[key] = Array.isArray(clone.workMeta[key]) ? clone.workMeta[key].map(value => String(value || '').trim()).filter(Boolean) : [];
+        });
         return clone;
       }
 
