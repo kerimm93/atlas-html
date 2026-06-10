@@ -6735,7 +6735,7 @@ ${workMeta.nextThought || '—'}`,
           <details id="projectHandoffImportSection" style="margin:12px 0 14px;" ${keepOpen ? 'open' : ''}>
             <summary style="font-weight:700;">Projekt aus Chat übernehmen</summary>
             <div style="margin-top:10px;">
-              <p class="mini">Erzeuge zuerst einen lesbaren Kontext-Prompt. Importiert wird erst nach JSON-Prüfung, Vorschau und ausdrücklicher Bestätigung.</p>
+              <p class="mini">Dieser Erstimport legt ein neues Projekt aus einem bestehenden GPT-/Claude-Chat an. Er ist nicht für laufende Sprint-Handoffs gedacht; Sprint-/Hauptchat-Handoffs bleiben im Projektkontext beziehungsweise Sprint-Dock. Importiert wird erst nach JSON-Prüfung, Vorschau und ausdrücklicher Bestätigung.</p>
               <div class="field">
                 <label for="projectContextDraftPromptOutput">1. Projektkontext-Entwurf</label>
                 <div class="stack-row"><button class="btn" id="btnBuildProjectContextDraftPrompt">Projektkontext-Prompt erzeugen</button><button class="btn btn-ghost" id="btnCopyProjectContextDraftPrompt" ${state.promptDraft ? '' : 'disabled'}>Kopieren</button></div>
@@ -6786,7 +6786,6 @@ ${workMeta.nextThought || '—'}`,
             <div class="stack-row" style="margin-top:10px;">
               <button class="btn btn-primary" id="btnStartNewProject">+ Neues Projekt</button>
             </div>
-            ${renderProjectHandoffImportSection()}
             <div style="margin-top:12px;">
               ${renderDailyLogQuerySection()}
               ${renderMultiProjectNotesImportSection()}
@@ -6888,7 +6887,6 @@ ${workMeta.nextThought || '—'}`,
             </div>
           </header>
 
-          ${renderProjectHandoffImportSection()}
           ${renderSprintQuickDock(p.id, { disableStart: !projectMainChat })}
 
           <div class="workspace-status-strip">
@@ -7417,6 +7415,7 @@ ${workMeta.nextThought || '—'}`,
         return `
           ${renderContextBanner()}
           <div class="panel-title"><h3>Import & Materialanalyse</h3></div>
+          ${renderProjectHandoffImportSection()}
           <div class="notice" style="margin-bottom:10px;">
             Import in Projekt: <strong>${contextProject ? escapeHtml(contextProject.title) : '— kein Projekt gewählt —'}</strong>
           </div>
