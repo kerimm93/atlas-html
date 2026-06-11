@@ -27,6 +27,9 @@ const instrumentedScript = inlineScript
         encryptRoadtripGistPayload,
         decryptRoadtripGistPayload,
         areStatesSyncEquivalent,
+        isLocalDirtySinceLastGistSync,
+        mergeRemoteStateForGistPull,
+        rememberSuccessfulGistSyncFingerprint,
         gistSync,
         gistPush,
         setState(value) { S = JSON.parse(JSON.stringify(value)); ensureDefaults(); },
@@ -148,6 +151,7 @@ async function preflightFromResponse(fetchResponse) {
 
 (async () => {
   assert.match(String(api.gistSync), /safePatchGistRemote/);
+  assert.equal((String(api.gistSync).match(/rememberSuccessfulGistSyncFingerprint/g) || []).length, 2);
   assert.match(String(api.gistPush), /safePatchGistRemote/);
   assert.deepEqual(
     Object.keys(api.createGistSyncOutcome()).sort(),
@@ -225,6 +229,25 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(writeOutcome.status, 'success');
   assert.equal(writeOutcome.wroteRemote, true);
   assert.deepEqual(writeQueue.calls.map(call => call.options.method), ['GET', 'PATCH']);
+  assert.equal(writeQueue.calls[1].options.headers['If-Match'], '"etag-123"');
+
+  const conditionalConflictQueue = queuedFetch([stableGet, response({ status: 412, bodyReadMustFail: true })]);
+  const conditionalConflict = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: inline, content: '{"encrypted":true}', fetch: conditionalConflictQueue.fetch, crypto: webcrypto });
+  conditionalConflictQueue.assertDone();
+  assert.equal(conditionalConflict.status, 'conflict');
+  assert.equal(conditionalConflict.errorCode, 'remote-changed-during-sync');
+  assert.equal(conditionalConflict.wroteRemote, false);
+  assert.equal(conditionalConflictQueue.calls[1].options.headers['If-Match'], '"etag-123"');
+
+  const noEtagGet = response({ json: gistWithFile({ content: inlineContent, truncated: false }) });
+  const noEtagSnapshot = await preflightFromResponse(noEtagGet);
+  const noEtagQueue = queuedFetch([noEtagGet]);
+  const noEtagOutcome = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: noEtagSnapshot, content: '{"encrypted":true}', fetch: noEtagQueue.fetch, crypto: webcrypto });
+  noEtagQueue.assertDone();
+  assert.equal(noEtagOutcome.status, 'write-error');
+  assert.equal(noEtagOutcome.errorCode, 'gist-write-precondition-unavailable');
+  assert.equal(noEtagOutcome.wroteRemote, false);
+  assert.deepEqual(noEtagQueue.calls.map(call => call.options.method), ['GET']);
 
   const changedGet = response({
     json: gistWithFile({ content: JSON.stringify({ changed: true }), truncated: false }, { history: [{ version: 'revision-999' }] }),
@@ -288,6 +311,19 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(api.getSyncFingerprint(), '');
   assert.equal(JSON.stringify(api.getStatus()).includes(responseSecret), false);
   assert.equal(alerts.some(message => message.includes(responseSecret) || message.includes(token)), false);
+
+  const firstPulledState = activeState('timestamp-free-first');
+  delete firstPulledState.projects[0].createdAt;
+  delete firstPulledState.projects[0].updatedAt;
+  api.rememberSuccessfulGistSyncFingerprint(firstPulledState);
+  assert.notEqual(api.getSyncFingerprint(), '');
+
+  const secondPulledState = activeState('timestamp-free-second');
+  delete secondPulledState.projects[0].createdAt;
+  delete secondPulledState.projects[0].updatedAt;
+  assert.equal(api.isLocalDirtySinceLastGistSync(firstPulledState, secondPulledState), false);
+  const cleanMerge = api.mergeRemoteStateForGistPull(firstPulledState, secondPulledState, { preferRemoteWhenLocalClean: true });
+  assert.equal(cleanMerge.projects[0].id, 'timestamp-free-second');
 
   console.log('Gist-Sync-Preflight VM-Tests erfolgreich.');
 })().catch(error => {

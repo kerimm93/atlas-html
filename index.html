@@ -12561,21 +12561,41 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           });
         }
 
+        if (!writeSnapshot.etag) {
+          return createGistSyncOutcome({
+            status: 'write-error',
+            remoteKind: writeSnapshot.remoteKind,
+            warnings: ['gist-write-precondition-unavailable'].concat(writeSnapshot.warnings || []),
+            errorCode: 'gist-write-precondition-unavailable'
+          });
+        }
+
         let response;
         try {
+          const patchHeaders = githubHeaders(String(opts.token || ''), true);
+          patchHeaders['If-Match'] = writeSnapshot.etag;
           response = await fetchImpl('https://api.github.com/gists/' + encodeURIComponent(String(opts.gistId || '')), {
             method: 'PATCH',
-            headers: githubHeaders(String(opts.token || ''), true),
+            headers: patchHeaders,
             body: JSON.stringify({ files: { [GIST_FILE]: { content: String(opts.content || '') } } })
           });
         } catch (err) {
           return createGistSyncOutcome({ status: 'write-error', remoteKind: writeSnapshot.remoteKind, errorCode: 'gist-patch-network-error' });
         }
         if (!response.ok) {
+          const httpStatus = Number(response.status) || 0;
+          if (httpStatus === 412) {
+            return createGistSyncOutcome({
+              status: 'conflict',
+              remoteKind: writeSnapshot.remoteKind,
+              warnings: ['gist-write-precondition-failed'].concat(writeSnapshot.warnings || []),
+              errorCode: 'remote-changed-during-sync'
+            });
+          }
           return createGistSyncOutcome({
             status: 'write-error',
             remoteKind: writeSnapshot.remoteKind,
-            errorCode: gistPatchErrorCode(Number(response.status) || 0)
+            errorCode: gistPatchErrorCode(httpStatus)
           });
         }
         return createGistSyncOutcome({
@@ -12606,6 +12626,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'gist-patch-permission-or-rate-limit': 'Gist-Schreiben fehlgeschlagen: Berechtigung fehlt oder das GitHub-Limit wurde erreicht.',
           'gist-patch-not-found-or-inaccessible': 'Gist-Schreiben fehlgeschlagen: Der Gist ist nicht zugänglich.',
           'gist-patch-network-error': 'Gist-Schreiben fehlgeschlagen: Netzwerkfehler.',
+          'gist-write-precondition-unavailable': 'Gist-Schreiben wurde sicher abgebrochen: GitHub hat keine Versionskennung geliefert.',
           'gist-patch-failed': 'Gist-Schreiben fehlgeschlagen.'
         };
         return messages[errorCode] || 'Gist-Sync fehlgeschlagen.';
@@ -12759,6 +12780,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           S._lastGistPullAt = pullTs;
           _gistStatus.lastPull = pullTs;
           _gistStatus.lastError = '';
+          rememberSuccessfulGistSyncFingerprint(S);
           save();
           renderAll();
           updateGistStatusUI();
@@ -12789,6 +12811,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             ensureDefaults();
             S._lastGistPullAt = pullTs;
             _gistStatus.lastPull = pullTs;
+            rememberSuccessfulGistSyncFingerprint(S);
             save();
             renderAll();
           }
