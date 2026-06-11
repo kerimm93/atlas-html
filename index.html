@@ -12356,6 +12356,46 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }, overrides || {});
       }
 
+      function createGistSyncOutcome(overrides) {
+        return Object.assign({
+          status: 'error',
+          direction: 'none',
+          wroteRemote: false,
+          changedLocal: false,
+          remoteKind: 'none',
+          warnings: [],
+          errorCode: ''
+        }, overrides || {});
+      }
+
+      function compareGistPreflightSnapshots(before, after) {
+        const left = createGistPreflightSnapshot(before);
+        const right = createGistPreflightSnapshot(after);
+        const fields = ['ok', 'status', 'revision', 'etag', 'updatedAt', 'contentFingerprint', 'remoteKind'];
+        const changedFields = fields.filter(field => left[field] !== right[field]);
+        return {
+          changed: changedFields.length > 0,
+          changedFields,
+          reachableBefore: !!left.ok,
+          reachableAfter: !!right.ok
+        };
+      }
+
+      function isEmptyGistPreflightSnapshot(snapshot) {
+        return !!(snapshot && !snapshot.ok && (snapshot.errorCode === 'gist-file-empty' || snapshot.errorCode === 'gist-file-missing'));
+      }
+
+      function decideGistSyncMatrix(localState, remoteState, remoteSnapshot) {
+        const localActive = hasRoadtripUserData(localState);
+        const remoteEmpty = isEmptyGistPreflightSnapshot(remoteSnapshot) || !hasRoadtripUserData(remoteState);
+        const remoteActive = !remoteEmpty;
+        if (!localActive && remoteEmpty) return 'no-op-both-empty';
+        if (localActive && remoteEmpty) return 'initialize-remote-after-confirmation';
+        if (!localActive && remoteActive) return 'pull-only';
+        if (areStatesSyncEquivalent(localState, remoteState)) return 'no-op-identical';
+        return 'reconcile';
+      }
+
       async function fingerprintGistContent(content, cryptoImpl) {
         const cryptoApi = cryptoImpl || globalThis.crypto;
         const bytes = new TextEncoder().encode(String(content));
@@ -12494,188 +12534,312 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }));
       }
 
+      function gistPatchErrorCode(httpStatus) {
+        if (httpStatus === 401) return 'gist-patch-authentication-failed';
+        if (httpStatus === 403) return 'gist-patch-permission-or-rate-limit';
+        if (httpStatus === 404) return 'gist-patch-not-found-or-inaccessible';
+        return 'gist-patch-failed';
+      }
+
+      async function safePatchGistRemote(options) {
+        const opts = options && typeof options === 'object' ? options : {};
+        const fetchImpl = opts.fetch || globalThis.fetch;
+        const expectedSnapshot = createGistPreflightSnapshot(opts.expectedSnapshot);
+        const writeSnapshot = await preflightGistRemote({
+          gistId: opts.gistId,
+          token: opts.token,
+          fetch: fetchImpl,
+          crypto: opts.crypto
+        });
+        const comparison = compareGistPreflightSnapshots(expectedSnapshot, writeSnapshot);
+        if (comparison.changed) {
+          return createGistSyncOutcome({
+            status: 'conflict',
+            remoteKind: writeSnapshot.remoteKind,
+            warnings: ['gist-write-preflight-changed'].concat(writeSnapshot.warnings || []),
+            errorCode: 'remote-changed-during-sync'
+          });
+        }
+
+        if (!writeSnapshot.etag) {
+          return createGistSyncOutcome({
+            status: 'write-error',
+            remoteKind: writeSnapshot.remoteKind,
+            warnings: ['gist-write-precondition-unavailable'].concat(writeSnapshot.warnings || []),
+            errorCode: 'gist-write-precondition-unavailable'
+          });
+        }
+
+        let response;
+        try {
+          const patchHeaders = githubHeaders(String(opts.token || ''), true);
+          patchHeaders['If-Match'] = writeSnapshot.etag;
+          response = await fetchImpl('https://api.github.com/gists/' + encodeURIComponent(String(opts.gistId || '')), {
+            method: 'PATCH',
+            headers: patchHeaders,
+            body: JSON.stringify({ files: { [GIST_FILE]: { content: String(opts.content || '') } } })
+          });
+        } catch (err) {
+          return createGistSyncOutcome({ status: 'write-error', remoteKind: writeSnapshot.remoteKind, errorCode: 'gist-patch-network-error' });
+        }
+        if (!response.ok) {
+          const httpStatus = Number(response.status) || 0;
+          if (httpStatus === 412) {
+            return createGistSyncOutcome({
+              status: 'conflict',
+              remoteKind: writeSnapshot.remoteKind,
+              warnings: ['gist-write-precondition-failed'].concat(writeSnapshot.warnings || []),
+              errorCode: 'remote-changed-during-sync'
+            });
+          }
+          return createGistSyncOutcome({
+            status: 'write-error',
+            remoteKind: writeSnapshot.remoteKind,
+            errorCode: gistPatchErrorCode(httpStatus)
+          });
+        }
+        return createGistSyncOutcome({
+          status: 'success',
+          direction: 'push',
+          wroteRemote: true,
+          remoteKind: writeSnapshot.remoteKind,
+          warnings: (writeSnapshot.warnings || []).slice()
+        });
+      }
+
+      function applySuccessfulGistWrite(stagedState, syncTs) {
+        S = stagedState;
+        _gistStatus.lastPush = syncTs;
+        _gistStatus.lastError = '';
+        rememberSuccessfulGistSyncFingerprint(S);
+        save();
+        updateGistStatusUI();
+      }
+
+      function gistSyncFailureMessage(errorCode) {
+        const messages = {
+          'remote-changed-during-sync': 'Der Remote-Gist hat sich während des Syncs geändert. Es wurde nichts überschrieben.',
+          'wrong-passphrase-or-invalid-gist': 'Falsche Passphrase oder beschädigter Gist.',
+          'gist-format-unsupported': 'Unbekanntes Gist-Format. Kein Pull/Merge durchgeführt.',
+          'gist-state-invalid': 'Der Gist enthält keinen gültigen Roadtrip-State.',
+          'gist-patch-authentication-failed': 'Gist-Schreiben fehlgeschlagen: GitHub-Authentifizierung wurde abgelehnt.',
+          'gist-patch-permission-or-rate-limit': 'Gist-Schreiben fehlgeschlagen: Berechtigung fehlt oder das GitHub-Limit wurde erreicht.',
+          'gist-patch-not-found-or-inaccessible': 'Gist-Schreiben fehlgeschlagen: Der Gist ist nicht zugänglich.',
+          'gist-patch-network-error': 'Gist-Schreiben fehlgeschlagen: Netzwerkfehler.',
+          'gist-write-precondition-unavailable': 'Gist-Schreiben wurde sicher abgebrochen: GitHub hat keine Versionskennung geliefert.',
+          'gist-patch-failed': 'Gist-Schreiben fehlgeschlagen.'
+        };
+        return messages[errorCode] || 'Gist-Sync fehlgeschlagen.';
+      }
+
       async function gistPush() {
         if (!C.gistId || !C.gistToken) {
-          return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
+          alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
+          return createGistSyncOutcome({ status: 'configuration-error', errorCode: 'gist-configuration-missing' });
         }
         const proceed = confirm('Riskante Aktion: Diese Aktion überschreibt den Remote-Gist mit dem aktuellen lokalen Stand. Wenn auf einem anderen Gerät neuere Daten liegen, können diese verloren gehen. Vorher ZIP-Backup oder JSON-Export erstellen. Fortfahren?');
-        if (!proceed) return;
-        let prevLastExported = '';
-        let prevLastGistPushAt = '';
-        try {
-          prevLastExported = S._lastExported || '';
-          prevLastGistPushAt = S._lastGistPushAt || '';
-          const passphrase = getRoadtripGistPassphrase();
-          if (!passphrase) {
-            alert('Push ohne Passphrase nicht möglich. Gist-Sync ist verschlüsselt. Bitte Passphrase eingeben oder stattdessen ZIP-Backup/JSON-Export nutzen.');
-            return;
-          }
-          const syncTs = new Date().toISOString();
-          S._lastExported = syncTs;
-          S._lastGistPushAt = syncTs;
-          const payload = buildGistPayload();
-          payload.exported = syncTs;
-          const envelope = await encryptRoadtripGistPayload(payload, passphrase);
-          const r = await fetch('https://api.github.com/gists/' + C.gistId, {
-            method: 'PATCH',
-            headers: githubHeaders(C.gistToken, true),
-            body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
-          });
-          if (!r.ok) {
-            const errText = await r.text().catch(() => '');
-            throw new Error('HTTP ' + r.status + (errText ? ': ' + errText.slice(0, 120) : ''));
-          }
-          const body = await r.json().catch(() => null);
-          if (!body || !body.files || !body.files[GIST_FILE]) throw new Error('Antwort ohne erwartete Gist-Datei.');
-          _gistStatus.lastPush = syncTs;
-          _gistStatus.lastError = '';
-          rememberSuccessfulGistSyncFingerprint(S);
-          save();
-          updateGistStatusUI();
-          alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
-        } catch (e) {
-          S._lastExported = prevLastExported;
-          S._lastGistPushAt = prevLastGistPushAt;
-          _gistStatus.lastError = e.message.slice(0, 80);
-          updateGistStatusUI();
-          alert('Gist-Push fehlgeschlagen: ' + e.message + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
+        if (!proceed) return createGistSyncOutcome({ status: 'cancelled' });
+        const passphrase = getRoadtripGistPassphrase();
+        if (!passphrase) {
+          alert('Push ohne Passphrase nicht möglich. Gist-Sync ist verschlüsselt. Bitte Passphrase eingeben oder stattdessen ZIP-Backup/JSON-Export nutzen.');
+          return createGistSyncOutcome({ status: 'passphrase-required', errorCode: 'gist-passphrase-required' });
         }
+
+        const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken });
+        if (!initialSnapshot.ok && !isEmptyGistPreflightSnapshot(initialSnapshot)) {
+          _gistStatus.lastError = initialSnapshot.errorCode;
+          updateGistStatusUI();
+          alert(gistPreflightUserMessage(initialSnapshot));
+          return createGistSyncOutcome({ status: 'preflight-error', remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings, errorCode: initialSnapshot.errorCode });
+        }
+
+        if (initialSnapshot.ok && isRoadtripEncryptedGistPayload(initialSnapshot.json)) {
+          try {
+            const remotePayload = await decryptRoadtripGistPayload(initialSnapshot.json, passphrase);
+            const remoteState = getGistPayloadState(remotePayload);
+            if (remoteState && areStatesSyncEquivalent(S, remoteState)) {
+              _gistStatus.lastError = '';
+              updateGistStatusUI();
+              alert('Gist und lokaler Stand sind bereits synchron.');
+              return createGistSyncOutcome({ status: 'no-op', remoteKind: initialSnapshot.remoteKind });
+            }
+          } catch (err) {
+            _gistStatus.lastError = 'wrong-passphrase-or-invalid-gist';
+            updateGistStatusUI();
+            alert(gistSyncFailureMessage('wrong-passphrase-or-invalid-gist'));
+            return createGistSyncOutcome({ status: 'decrypt-error', remoteKind: initialSnapshot.remoteKind, errorCode: 'wrong-passphrase-or-invalid-gist' });
+          }
+        }
+
+        const syncTs = new Date().toISOString();
+        const stagedState = JSON.parse(JSON.stringify(S || {}));
+        stagedState._lastExported = syncTs;
+        stagedState._lastGistPushAt = syncTs;
+        const payload = { version: 1, exported: syncTs, state: stagedState };
+        const envelope = await encryptRoadtripGistPayload(payload, passphrase);
+        const outcome = await safePatchGistRemote({
+          gistId: C.gistId,
+          token: C.gistToken,
+          expectedSnapshot: initialSnapshot,
+          content: JSON.stringify(envelope, null, 2)
+        });
+        if (!outcome.wroteRemote) {
+          _gistStatus.lastError = outcome.errorCode;
+          updateGistStatusUI();
+          alert(gistSyncFailureMessage(outcome.errorCode) + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
+          return outcome;
+        }
+        applySuccessfulGistWrite(stagedState, syncTs);
+        alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
+        return outcome;
       }
 
       async function gistSync() {
         if (!C.gistId || !C.gistToken) {
-          return alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
+          alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
+          return createGistSyncOutcome({ status: 'configuration-error', errorCode: 'gist-configuration-missing' });
         }
         const passphrase = getRoadtripGistPassphrase();
         if (!passphrase) {
           alert('Passphrase erforderlich. Ohne Passphrase kann der verschlüsselte Gist-Sync nicht ausgeführt werden.');
-          return;
+          return createGistSyncOutcome({ status: 'passphrase-required', errorCode: 'gist-passphrase-required' });
         }
-        const prevLastExported = S._lastExported || '';
-        const prevLastGistPushAt = S._lastGistPushAt || '';
-        const prevLastGistPullAt = S._lastGistPullAt || '';
-        const prevStateSnapshot = JSON.parse(JSON.stringify(S || {}));
-        try {
-          const remoteSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken });
-          if (!remoteSnapshot.ok) {
-            _gistStatus.lastError = remoteSnapshot.errorCode;
-            updateGistStatusUI();
-            alert(gistPreflightUserMessage(remoteSnapshot));
-            return;
-          }
-          const remoteRaw = remoteSnapshot.json;
-          let remotePayload = null;
-          let pulledLegacyPlain = false;
-          if (isRoadtripEncryptedGistPayload(remoteRaw)) {
-            try {
-              remotePayload = await decryptRoadtripGistPayload(remoteRaw, passphrase);
-            } catch (err) {
-              _gistStatus.lastError = 'wrong-passphrase-or-invalid-gist';
-              updateGistStatusUI();
-              alert('Falsche Passphrase oder beschädigter Gist.');
-              return;
-            }
-          } else if (isLegacyPlainRoadtripGistPayload(remoteRaw)) {
-            const proceedLegacy = confirm('Legacy-Klartext-Gist erkannt. Dieser Gist ist unverschlüsselt. Vor Migration ZIP-Backup empfohlen. Klartext-Gist einmalig lesen und danach verschlüsselt neu pushen?');
-            if (!proceedLegacy) return;
-            remotePayload = remoteRaw;
-            pulledLegacyPlain = true;
-          } else {
-            alert('Unbekanntes Gist-Format. Kein Pull/Merge durchgeführt.');
-            return;
-          }
-          const remoteState = getGistPayloadState(remotePayload);
-          if (!remoteState) throw new Error('Ungültiger Gist-State.');
-          const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
-          const statesEqual = areStatesSyncEquivalent(localStateSnapshot, remoteState);
-          if (statesEqual && !pulledLegacyPlain) {
-            const pullTs = new Date().toISOString();
-            S._lastGistPullAt = pullTs;
-            _gistStatus.lastPull = pullTs;
+
+        const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken });
+        const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
+        const localHasUserData = hasRoadtripUserData(localStateSnapshot);
+        if (isEmptyGistPreflightSnapshot(initialSnapshot)) {
+          const emptyDecision = decideGistSyncMatrix(localStateSnapshot, null, initialSnapshot);
+          if (emptyDecision === 'no-op-both-empty') {
             _gistStatus.lastError = '';
-            rememberSuccessfulGistSyncFingerprint(S);
-            save();
             updateGistStatusUI();
-            alert('Gist und lokaler Stand sind bereits synchron.');
-            return;
+            alert('Lokaler Stand und Remote-Gist sind leer. Kein Sync erforderlich.');
+            return createGistSyncOutcome({ status: 'no-op', remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings });
           }
+          const initialize = confirm('Remote-Gist ist leer. Vorschau: Der aktuelle lokale Stand wird verschlüsselt als initialer Remote-Stand geschrieben. Fortfahren?');
+          if (!initialize) return createGistSyncOutcome({ status: 'preview-cancelled', remoteKind: initialSnapshot.remoteKind });
+          const syncTs = new Date().toISOString();
+          const stagedState = JSON.parse(JSON.stringify(localStateSnapshot));
+          stagedState._lastExported = syncTs;
+          stagedState._lastGistPushAt = syncTs;
+          const envelope = await encryptRoadtripGistPayload({ version: 1, exported: syncTs, state: stagedState }, passphrase);
+          const writeOutcome = await safePatchGistRemote({ gistId: C.gistId, token: C.gistToken, expectedSnapshot: initialSnapshot, content: JSON.stringify(envelope, null, 2) });
+          if (!writeOutcome.wroteRemote) {
+            _gistStatus.lastError = writeOutcome.errorCode;
+            updateGistStatusUI();
+            alert(gistSyncFailureMessage(writeOutcome.errorCode));
+            return writeOutcome;
+          }
+          applySuccessfulGistWrite(stagedState, syncTs);
+          alert('Leerer Remote-Gist wurde nach Bestätigung verschlüsselt initialisiert.');
+          return createGistSyncOutcome(Object.assign({}, writeOutcome, { status: 'initialized-remote' }));
+        }
+        if (!initialSnapshot.ok) {
+          _gistStatus.lastError = initialSnapshot.errorCode;
+          updateGistStatusUI();
+          alert(gistPreflightUserMessage(initialSnapshot));
+          return createGistSyncOutcome({ status: 'preflight-error', remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings, errorCode: initialSnapshot.errorCode });
+        }
 
-          const localHasUserData = hasRoadtripUserData(localStateSnapshot);
-          const remoteHasUserData = hasRoadtripUserData(remoteState);
-          const localHasUnsyncedUserChanges = isLocalDirtySinceLastGistSync(localStateSnapshot, remoteState);
-          const shouldPreferRemote = !localHasUnsyncedUserChanges && remoteHasUserData && !pulledLegacyPlain;
-          const mergedState = mergeRemoteStateForGistPull(localStateSnapshot, remoteState, { preferRemoteWhenLocalClean: shouldPreferRemote });
-          const localEqualsMerged = areStatesSyncEquivalent(localStateSnapshot, mergedState);
-          const remoteEqualsMerged = areStatesSyncEquivalent(remoteState, mergedState);
-          const didChange = !localEqualsMerged;
-          const initialRemoteAdopted = didChange && !localHasUserData && remoteHasUserData && remoteEqualsMerged;
-          const localWinsWithoutMerge = !didChange && !remoteEqualsMerged && localHasUnsyncedUserChanges;
-          const tombstoneCorrectionPush = shouldPreferRemote && !remoteEqualsMerged;
-          const needsPush = pulledLegacyPlain || localWinsWithoutMerge || (localHasUnsyncedUserChanges && !remoteEqualsMerged) || tombstoneCorrectionPush;
-          let syncOutcome = 'merged-and-pushed';
-          if (!didChange && !needsPush) syncOutcome = 'already-synced';
-          else if (pulledLegacyPlain) syncOutcome = 'legacy-migrated';
-          else if (initialRemoteAdopted) syncOutcome = 'initial-remote-adopted';
-          else if (didChange && !needsPush) syncOutcome = 'remote-adopted';
-          else if (localWinsWithoutMerge) syncOutcome = 'local-pushed';
+        let remotePayload;
+        let pulledLegacyPlain = false;
+        if (isRoadtripEncryptedGistPayload(initialSnapshot.json)) {
+          try {
+            remotePayload = await decryptRoadtripGistPayload(initialSnapshot.json, passphrase);
+          } catch (err) {
+            _gistStatus.lastError = 'wrong-passphrase-or-invalid-gist';
+            updateGistStatusUI();
+            alert(gistSyncFailureMessage('wrong-passphrase-or-invalid-gist'));
+            return createGistSyncOutcome({ status: 'decrypt-error', remoteKind: initialSnapshot.remoteKind, errorCode: 'wrong-passphrase-or-invalid-gist' });
+          }
+        } else if (isLegacyPlainRoadtripGistPayload(initialSnapshot.json)) {
+          const proceedLegacy = confirm('Legacy-Klartext-Gist erkannt. Dieser Gist ist unverschlüsselt. Vor Migration ZIP-Backup empfohlen. Klartext-Gist einmalig lesen und danach verschlüsselt neu pushen?');
+          if (!proceedLegacy) return createGistSyncOutcome({ status: 'cancelled', remoteKind: initialSnapshot.remoteKind });
+          remotePayload = initialSnapshot.json;
+          pulledLegacyPlain = true;
+        } else {
+          _gistStatus.lastError = 'gist-format-unsupported';
+          updateGistStatusUI();
+          alert(gistSyncFailureMessage('gist-format-unsupported'));
+          return createGistSyncOutcome({ status: 'format-error', remoteKind: initialSnapshot.remoteKind, errorCode: 'gist-format-unsupported' });
+        }
 
-          if (didChange) S = mergedState;
-          ensureDefaults();
-          pruneDeletedIds();
-          S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
-          S.features = (S.features || []).filter(f => !isDeleted(f.id));
-          S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
-          S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
-          S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
-          S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
-          S.unmatchedNotes = (S.unmatchedNotes || []).filter(n => !isDeleted(n.id));
+        const remoteState = getGistPayloadState(remotePayload);
+        if (!remoteState) {
+          _gistStatus.lastError = 'gist-state-invalid';
+          updateGistStatusUI();
+          alert(gistSyncFailureMessage('gist-state-invalid'));
+          return createGistSyncOutcome({ status: 'state-error', remoteKind: initialSnapshot.remoteKind, errorCode: 'gist-state-invalid' });
+        }
+        const remoteHasUserData = hasRoadtripUserData(remoteState);
+        const matrixDecision = decideGistSyncMatrix(localStateSnapshot, remoteState, initialSnapshot);
+        if (matrixDecision === 'pull-only' && !pulledLegacyPlain) {
           const pullTs = new Date().toISOString();
+          S = Object.assign(defaultState(), JSON.parse(JSON.stringify(remoteState)));
+          ensureDefaults();
           S._lastGistPullAt = pullTs;
           _gistStatus.lastPull = pullTs;
           _gistStatus.lastError = '';
-
-          if (needsPush) {
-            const syncTs = new Date().toISOString();
-            S._lastExported = syncTs;
-            S._lastGistPushAt = syncTs;
-            const payload = buildGistPayload();
-            payload.exported = syncTs;
-            const envelope = await encryptRoadtripGistPayload(payload, passphrase);
-            const w = await fetch('https://api.github.com/gists/' + C.gistId, {
-              method: 'PATCH',
-              headers: githubHeaders(C.gistToken, true),
-              body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
-            });
-            if (!w.ok) {
-              const errText = await w.text().catch(() => '');
-              throw new Error('cloud-write: HTTP ' + w.status + (errText ? ': ' + errText.slice(0, 120) : ''));
-            }
-            _gistStatus.lastPush = syncTs;
-          }
-
           rememberSuccessfulGistSyncFingerprint(S);
-          if (didChange || needsPush) save();
+          save();
           renderAll();
           updateGistStatusUI();
-          if (syncOutcome === 'already-synced') alert('Gist und lokaler Stand sind bereits synchron.');
-          else if (syncOutcome === 'initial-remote-adopted') alert('Erster Sync auf diesem Gerät abgeschlossen. Remote-Stand wurde lokal übernommen.');
-          else if (syncOutcome === 'remote-adopted') alert('Remote-Stand wurde lokal übernommen.');
-          else if (syncOutcome === 'local-pushed') alert('Lokaler Stand war neuer und wurde verschlüsselt in den Gist synchronisiert.');
-          else if (syncOutcome === 'legacy-migrated') alert('Legacy-Klartext-Gist wurde übernommen und verschlüsselt migriert.');
-          else alert('Lokale und Remote-Änderungen wurden gemergt und verschlüsselt synchronisiert.');
-        } catch (e) {
-          if (String(e.message || '').startsWith('cloud-write:')) {
-            S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
-            ensureDefaults();
-          }
-          S._lastExported = prevLastExported;
-          S._lastGistPushAt = prevLastGistPushAt;
-          S._lastGistPullAt = prevLastGistPullAt;
-          _gistStatus.lastError = e.message.slice(0, 80);
-          updateGistStatusUI();
-          if (String(e.message || '').startsWith('cloud-write:')) alert('Cloud-Schreibfehler: Lokaler Runtime-State wurde auf den vorherigen Stand zurückgesetzt.');
-          else alert('Sync fehlgeschlagen beim Abrufen des Gist.');
+          alert('Remote-Stand wurde lokal übernommen.');
+          return createGistSyncOutcome({ status: 'pulled', direction: 'pull', changedLocal: true, remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings });
         }
+        if (matrixDecision === 'no-op-identical' && !pulledLegacyPlain) {
+          _gistStatus.lastError = '';
+          updateGistStatusUI();
+          alert('Gist und lokaler Stand sind bereits synchron.');
+          return createGistSyncOutcome({ status: 'no-op', remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings });
+        }
+
+        const localHasUnsyncedUserChanges = isLocalDirtySinceLastGistSync(localStateSnapshot, remoteState);
+        const shouldPreferRemote = !localHasUnsyncedUserChanges && remoteHasUserData && !pulledLegacyPlain;
+        const mergedState = mergeRemoteStateForGistPull(localStateSnapshot, remoteState, { preferRemoteWhenLocalClean: shouldPreferRemote });
+        const localEqualsMerged = areStatesSyncEquivalent(localStateSnapshot, mergedState);
+        const remoteEqualsMerged = areStatesSyncEquivalent(remoteState, mergedState);
+        const didChange = !localEqualsMerged;
+        const localWinsWithoutMerge = !didChange && !remoteEqualsMerged && localHasUnsyncedUserChanges;
+        const tombstoneCorrectionPush = shouldPreferRemote && !remoteEqualsMerged;
+        const needsPush = pulledLegacyPlain || localWinsWithoutMerge || (localHasUnsyncedUserChanges && !remoteEqualsMerged) || tombstoneCorrectionPush;
+
+        if (!needsPush) {
+          if (didChange) {
+            const pullTs = new Date().toISOString();
+            S = mergedState;
+            ensureDefaults();
+            S._lastGistPullAt = pullTs;
+            _gistStatus.lastPull = pullTs;
+            rememberSuccessfulGistSyncFingerprint(S);
+            save();
+            renderAll();
+          }
+          _gistStatus.lastError = '';
+          updateGistStatusUI();
+          alert(didChange ? 'Remote-Stand wurde lokal übernommen.' : 'Gist und lokaler Stand sind bereits synchron.');
+          return createGistSyncOutcome({ status: didChange ? 'pulled' : 'no-op', direction: didChange ? 'pull' : 'none', changedLocal: didChange, remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings });
+        }
+
+        const syncTs = new Date().toISOString();
+        const stagedState = JSON.parse(JSON.stringify(mergedState));
+        stagedState._lastGistPullAt = syncTs;
+        stagedState._lastExported = syncTs;
+        stagedState._lastGistPushAt = syncTs;
+        const envelope = await encryptRoadtripGistPayload({ version: 1, exported: syncTs, state: stagedState }, passphrase);
+        const writeOutcome = await safePatchGistRemote({ gistId: C.gistId, token: C.gistToken, expectedSnapshot: initialSnapshot, content: JSON.stringify(envelope, null, 2) });
+        if (!writeOutcome.wroteRemote) {
+          _gistStatus.lastError = writeOutcome.errorCode;
+          updateGistStatusUI();
+          alert(gistSyncFailureMessage(writeOutcome.errorCode));
+          return writeOutcome;
+        }
+        applySuccessfulGistWrite(stagedState, syncTs);
+        _gistStatus.lastPull = syncTs;
+        renderAll();
+        updateGistStatusUI();
+        alert(pulledLegacyPlain ? 'Legacy-Klartext-Gist wurde übernommen und verschlüsselt migriert.' : 'Lokale und Remote-Änderungen wurden gemergt und verschlüsselt synchronisiert.');
+        return createGistSyncOutcome(Object.assign({}, writeOutcome, { status: pulledLegacyPlain ? 'legacy-migrated' : 'synced', direction: didChange ? 'merge' : 'push', changedLocal: didChange }));
       }
 
       async function gistPull() { return gistSync(); }
