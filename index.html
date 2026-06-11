@@ -12341,21 +12341,159 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         el.textContent = txt || 'Noch kein Sync durchgeführt.';
       }
 
-      async function readGistFileJson(gist, preferredFileName) {
-        const fileObj = gist.files && (gist.files[preferredFileName] || Object.values(gist.files)[0]);
-        if (!fileObj) throw new Error('Keine Datei im Gist gefunden.');
-        let content = fileObj.content;
-        if ((!content || fileObj.truncated) && fileObj.raw_url) {
-          const rawResp = await fetch(fileObj.raw_url, { headers: { 'Accept': 'application/json,text/plain,*/*' } });
-          if (!rawResp.ok) throw new Error('Raw-Datei nicht lesbar (HTTP ' + rawResp.status + ')');
-          content = await rawResp.text();
-        }
-        if (!content || !String(content).trim()) throw new Error('Gist-Datei ist leer.');
+      function createGistPreflightSnapshot(overrides) {
+        return Object.assign({
+          ok: false,
+          status: 'error',
+          remoteKind: 'none',
+          httpStatus: 0,
+          errorCode: '',
+          warnings: [],
+          revision: '',
+          etag: '',
+          updatedAt: '',
+          contentFingerprint: ''
+        }, overrides || {});
+      }
+
+      async function fingerprintGistContent(content, cryptoImpl) {
+        const cryptoApi = cryptoImpl || globalThis.crypto;
+        const bytes = new TextEncoder().encode(String(content));
+        const digest = await cryptoApi.subtle.digest('SHA-256', bytes);
+        return 'sha256:' + Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+
+      function gistPreflightHttpFailure(httpStatus) {
+        if (httpStatus === 401) return { status: 'authentication-error', errorCode: 'gist-authentication-failed' };
+        if (httpStatus === 403) return { status: 'permission-or-rate-limit-error', errorCode: 'gist-permission-or-rate-limit' };
+        if (httpStatus === 404) return { status: 'not-found-or-inaccessible', errorCode: 'gist-not-found-or-inaccessible' };
+        return { status: 'http-error', errorCode: 'gist-http-error' };
+      }
+
+      function gistPreflightUserMessage(snapshot) {
+        const messages = {
+          'gist-authentication-failed': 'Gist-Abruf fehlgeschlagen: GitHub-Authentifizierung wurde abgelehnt.',
+          'gist-permission-or-rate-limit': 'Gist-Abruf fehlgeschlagen: Berechtigung fehlt oder das GitHub-Limit wurde erreicht.',
+          'gist-not-found-or-inaccessible': 'Gist wurde nicht gefunden oder ist mit diesem Token nicht zugänglich.',
+          'gist-file-missing': 'Der Gist enthält nicht die erwartete Datei roadtrip_data.json.',
+          'gist-file-empty': 'Die erwartete Gist-Datei ist leer.',
+          'gist-file-invalid-json': 'Die erwartete Gist-Datei enthält kein gültiges JSON.',
+          'gist-truncated-without-raw-url': 'Die Gist-Datei ist gekürzt, aber eine Raw-URL fehlt. Sync wurde sicher abgebrochen.',
+          'gist-raw-fetch-failed': 'Die gekürzte Gist-Datei konnte nicht über die Raw-URL geladen werden. Sync wurde sicher abgebrochen.',
+          'gist-raw-network-error': 'Die Raw-URL der gekürzten Gist-Datei war nicht erreichbar. Sync wurde sicher abgebrochen.',
+          'gist-response-invalid': 'GitHub hat keine gültige Gist-Antwort geliefert.',
+          'gist-network-error': 'Der Gist konnte wegen eines Netzwerkfehlers nicht abgerufen werden.'
+        };
+        return messages[snapshot && snapshot.errorCode] || 'Sync fehlgeschlagen beim sicheren Abrufen des Gist.';
+      }
+
+      async function preflightGistRemote(options) {
+        const opts = options && typeof options === 'object' ? options : {};
+        const gistId = String(opts.gistId || '');
+        const token = String(opts.token || '');
+        const fetchImpl = opts.fetch || globalThis.fetch;
+        const snapshot = createGistPreflightSnapshot();
+        if (!gistId || !token) return createGistPreflightSnapshot({ status: 'configuration-error', errorCode: 'gist-configuration-missing' });
+
+        let response;
         try {
-          return JSON.parse(content);
-        } catch (e) {
-          throw new Error('Gist-Inhalt ist kein gültiges JSON.');
+          const headers = Object.assign({}, githubHeaders(token, false), {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          });
+          response = await fetchImpl('https://api.github.com/gists/' + encodeURIComponent(gistId), {
+            method: 'GET',
+            cache: 'no-store',
+            headers
+          });
+        } catch (err) {
+          return createGistPreflightSnapshot({ status: 'network-error', errorCode: 'gist-network-error' });
         }
+
+        snapshot.httpStatus = Number(response.status) || 0;
+        snapshot.etag = response.headers && typeof response.headers.get === 'function' ? String(response.headers.get('ETag') || '') : '';
+        if (!response.ok) return createGistPreflightSnapshot(Object.assign({ httpStatus: snapshot.httpStatus, etag: snapshot.etag }, gistPreflightHttpFailure(snapshot.httpStatus)));
+
+        let gist;
+        try {
+          gist = await response.json();
+        } catch (err) {
+          return createGistPreflightSnapshot({ status: 'invalid-response', httpStatus: snapshot.httpStatus, errorCode: 'gist-response-invalid', etag: snapshot.etag });
+        }
+        if (!gist || typeof gist !== 'object' || Array.isArray(gist)) {
+          return createGistPreflightSnapshot({ status: 'invalid-response', httpStatus: snapshot.httpStatus, errorCode: 'gist-response-invalid', etag: snapshot.etag });
+        }
+
+        snapshot.revision = String(gist.history && gist.history[0] && gist.history[0].version || '');
+        snapshot.updatedAt = typeof gist.updated_at === 'string' ? gist.updated_at : '';
+        const fileObj = gist.files && typeof gist.files === 'object' && !Array.isArray(gist.files) ? gist.files[GIST_FILE] : null;
+        if (!fileObj || typeof fileObj !== 'object') {
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'missing-file', errorCode: 'gist-file-missing' }));
+        }
+
+        let content;
+        if (fileObj.truncated === true) {
+          snapshot.remoteKind = 'raw';
+          snapshot.warnings.push('gist-file-truncated');
+          if (!fileObj.raw_url || typeof fileObj.raw_url !== 'string') {
+            return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'raw-url-missing', errorCode: 'gist-truncated-without-raw-url' }));
+          }
+          let rawResponse;
+          try {
+            rawResponse = await fetchImpl(fileObj.raw_url, {
+              method: 'GET',
+              cache: 'no-store',
+              headers: {
+                'Accept': 'application/json,text/plain,*/*',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+              }
+            });
+          } catch (err) {
+            return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'raw-network-error', errorCode: 'gist-raw-network-error' }));
+          }
+          if (!rawResponse.ok) {
+            return createGistPreflightSnapshot(Object.assign(snapshot, {
+              status: 'raw-fetch-error',
+              httpStatus: Number(rawResponse.status) || snapshot.httpStatus,
+              errorCode: 'gist-raw-fetch-failed'
+            }));
+          }
+          try {
+            content = await rawResponse.text();
+          } catch (err) {
+            return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'raw-network-error', errorCode: 'gist-raw-network-error' }));
+          }
+          snapshot.warnings.push('gist-raw-url-resolved');
+        } else {
+          snapshot.remoteKind = 'inline';
+          content = fileObj.content;
+        }
+
+        if (typeof content !== 'string' || !content.trim()) {
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'empty-file', errorCode: 'gist-file-empty' }));
+        }
+
+        let json;
+        try {
+          json = JSON.parse(content);
+        } catch (err) {
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'invalid-json', errorCode: 'gist-file-invalid-json' }));
+        }
+
+        let contentFingerprint;
+        try {
+          contentFingerprint = await fingerprintGistContent(content, opts.crypto);
+        } catch (err) {
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'fingerprint-error', errorCode: 'gist-content-fingerprint-failed' }));
+        }
+        return createGistPreflightSnapshot(Object.assign(snapshot, {
+          ok: true,
+          status: 'ready',
+          errorCode: '',
+          contentFingerprint,
+          json
+        }));
       }
 
       async function gistPush() {
@@ -12420,12 +12558,14 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const prevLastGistPullAt = S._lastGistPullAt || '';
         const prevStateSnapshot = JSON.parse(JSON.stringify(S || {}));
         try {
-          const r = await fetch('https://api.github.com/gists/' + C.gistId, {
-            headers: githubHeaders(C.gistToken, false)
-          });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const gist = await r.json();
-          const remoteRaw = await readGistFileJson(gist, GIST_FILE);
+          const remoteSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken });
+          if (!remoteSnapshot.ok) {
+            _gistStatus.lastError = remoteSnapshot.errorCode;
+            updateGistStatusUI();
+            alert(gistPreflightUserMessage(remoteSnapshot));
+            return;
+          }
+          const remoteRaw = remoteSnapshot.json;
           let remotePayload = null;
           let pulledLegacyPlain = false;
           if (isRoadtripEncryptedGistPayload(remoteRaw)) {
