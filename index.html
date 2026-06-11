@@ -12154,10 +12154,6 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return h;
       }
 
-      function buildGistPayload() {
-        return { version: 1, exported: new Date().toISOString(), state: S };
-      }
-
       function getGistPayloadState(raw) {
         const candidate = (raw && typeof raw === 'object' && !Array.isArray(raw) && raw.state && typeof raw.state === 'object' && !Array.isArray(raw.state))
           ? raw.state
@@ -12341,9 +12337,16 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         el.textContent = txt || 'Noch kein Sync durchgeführt.';
       }
 
-      async function readGistFileJson(gist, preferredFileName) {
-        const fileObj = gist.files && (gist.files[preferredFileName] || Object.values(gist.files)[0]);
-        if (!fileObj) throw new Error('Keine Datei im Gist gefunden.');
+      async function fingerprintGistFileContent(content) {
+        const bytes = new TextEncoder().encode(String(content || ''));
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+
+      async function readGistFileJsonDetails(gist, preferredFileName, requirePreferredFile) {
+        const preferredFile = gist && gist.files && gist.files[preferredFileName];
+        const fileObj = preferredFile || (!requirePreferredFile && gist && gist.files ? Object.values(gist.files)[0] : null);
+        if (!fileObj) throw new Error(requirePreferredFile ? preferredFileName + ' wurde im Gist nicht gefunden.' : 'Keine Datei im Gist gefunden.');
         let content = fileObj.content;
         if ((!content || fileObj.truncated) && fileObj.raw_url) {
           const rawResp = await fetch(fileObj.raw_url, { headers: { 'Accept': 'application/json,text/plain,*/*' } });
@@ -12351,11 +12354,98 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           content = await rawResp.text();
         }
         if (!content || !String(content).trim()) throw new Error('Gist-Datei ist leer.');
+        let value;
         try {
-          return JSON.parse(content);
+          value = JSON.parse(content);
         } catch (e) {
           throw new Error('Gist-Inhalt ist kein gültiges JSON.');
         }
+        return { value, content: String(content), file: fileObj };
+      }
+
+      async function readRemoteGistSnapshot() {
+        const response = await fetch('https://api.github.com/gists/' + C.gistId, {
+          headers: githubHeaders(C.gistToken, false)
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const gist = await response.json();
+        if (!gist || typeof gist !== 'object' || Array.isArray(gist)) throw new Error('Ungültige Gist-Antwort.');
+        const fileDetails = await readGistFileJsonDetails(gist, GIST_FILE, true);
+        const history = Array.isArray(gist.history) ? gist.history : [];
+        const historyVersion = history[0] && history[0].version != null ? String(history[0].version) : '';
+        const revision = historyVersion || (gist.version != null ? String(gist.version) : '');
+        const etag = response.headers && typeof response.headers.get === 'function'
+          ? String(response.headers.get('etag') || '')
+          : '';
+        return {
+          status: 'ready',
+          etag,
+          revision,
+          updatedAt: typeof gist.updated_at === 'string' ? gist.updated_at : '',
+          contentFingerprint: await fingerprintGistFileContent(fileDetails.content),
+          remoteRaw: fileDetails.value
+        };
+      }
+
+      function changedGistSnapshotFeatures(initialSnapshot, currentSnapshot) {
+        const features = ['etag', 'revision', 'updatedAt', 'contentFingerprint'];
+        return features.filter(feature => initialSnapshot && initialSnapshot[feature]
+          && (!currentSnapshot || currentSnapshot[feature] !== initialSnapshot[feature]));
+      }
+
+      function remoteChangedDuringSyncResult(details) {
+        return Object.assign({
+          status: 'remote-changed-during-sync',
+          direction: 'none',
+          wroteRemote: false,
+          changedLocal: false
+        }, details || {});
+      }
+
+      function showRemoteChangedDuringSyncMessage() {
+        alert('Der Remote-Gist hat sich während des Syncs geändert oder konnte vor dem Schreiben nicht eindeutig erneut geprüft werden. Es wurde nichts überschrieben und kein Sync-Erfolg gespeichert. Bitte Sync erneut starten; bei wiederholtem Konflikt zuerst ZIP-Backup/JSON-Export erstellen und den Remote-Stand prüfen.');
+      }
+
+      async function writeGistAfterPreflight(initialSnapshot, envelope) {
+        let writeSnapshot;
+        try {
+          writeSnapshot = await readRemoteGistSnapshot();
+        } catch (error) {
+          showRemoteChangedDuringSyncMessage();
+          return remoteChangedDuringSyncResult({ reason: 'write-preflight-failed', error: String(error && error.message || error) });
+        }
+        const changedFeatures = changedGistSnapshotFeatures(initialSnapshot, writeSnapshot);
+        if (!initialSnapshot || initialSnapshot.status !== 'ready' || writeSnapshot.status !== 'ready' || changedFeatures.length) {
+          showRemoteChangedDuringSyncMessage();
+          return remoteChangedDuringSyncResult({ reason: 'remote-snapshot-changed', changedFeatures });
+        }
+        const response = await fetch('https://api.github.com/gists/' + C.gistId, {
+          method: 'PATCH',
+          headers: githubHeaders(C.gistToken, true),
+          body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
+        });
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          throw new Error('cloud-write: HTTP ' + response.status + (errText ? ': ' + errText.slice(0, 120) : ''));
+        }
+        const body = await response.json().catch(() => null);
+        if (!body || !body.files || !body.files[GIST_FILE]) throw new Error('cloud-write: Antwort ohne erwartete Gist-Datei.');
+        return { status: 'written', direction: 'push', wroteRemote: true, changedLocal: false, response: body };
+      }
+
+      function prepareStateForGistWrite(state) {
+        const prepared = Object.assign(defaultState(), JSON.parse(JSON.stringify(state || {})));
+        if (!prepared.deletedIds || typeof prepared.deletedIds !== 'object' || Array.isArray(prepared.deletedIds)) prepared.deletedIds = {};
+        const cutoffMs = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        Object.keys(prepared.deletedIds).forEach(id => {
+          const ms = Date.parse(prepared.deletedIds[id]);
+          if (Number.isFinite(ms) && ms < cutoffMs) delete prepared.deletedIds[id];
+        });
+        ['projects', 'features', 'notes', 'analyses', 'chats', 'importVersions', 'unmatchedNotes'].forEach(key => {
+          const list = Array.isArray(prepared[key]) ? prepared[key] : [];
+          prepared[key] = list.filter(item => item && !prepared.deletedIds[item.id]);
+        });
+        return prepared;
       }
 
       async function gistPush() {
@@ -12364,45 +12454,38 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
         const proceed = confirm('Riskante Aktion: Diese Aktion überschreibt den Remote-Gist mit dem aktuellen lokalen Stand. Wenn auf einem anderen Gerät neuere Daten liegen, können diese verloren gehen. Vorher ZIP-Backup oder JSON-Export erstellen. Fortfahren?');
         if (!proceed) return;
-        let prevLastExported = '';
-        let prevLastGistPushAt = '';
+        const passphrase = getRoadtripGistPassphrase();
+        if (!passphrase) {
+          alert('Push ohne Passphrase nicht möglich. Gist-Sync ist verschlüsselt. Bitte Passphrase eingeben oder stattdessen ZIP-Backup/JSON-Export nutzen.');
+          return;
+        }
         try {
-          prevLastExported = S._lastExported || '';
-          prevLastGistPushAt = S._lastGistPushAt || '';
-          const passphrase = getRoadtripGistPassphrase();
-          if (!passphrase) {
-            alert('Push ohne Passphrase nicht möglich. Gist-Sync ist verschlüsselt. Bitte Passphrase eingeben oder stattdessen ZIP-Backup/JSON-Export nutzen.');
-            return;
-          }
+          const initialSnapshot = await readRemoteGistSnapshot();
           const syncTs = new Date().toISOString();
-          S._lastExported = syncTs;
-          S._lastGistPushAt = syncTs;
-          const payload = buildGistPayload();
-          payload.exported = syncTs;
+          const pushedState = prepareStateForGistWrite(S);
+          pushedState._lastExported = syncTs;
+          pushedState._lastGistPushAt = syncTs;
+          const payload = { version: 1, exported: syncTs, state: pushedState };
           const envelope = await encryptRoadtripGistPayload(payload, passphrase);
-          const r = await fetch('https://api.github.com/gists/' + C.gistId, {
-            method: 'PATCH',
-            headers: githubHeaders(C.gistToken, true),
-            body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
-          });
-          if (!r.ok) {
-            const errText = await r.text().catch(() => '');
-            throw new Error('HTTP ' + r.status + (errText ? ': ' + errText.slice(0, 120) : ''));
+          const result = await writeGistAfterPreflight(initialSnapshot, envelope);
+          if (!result.wroteRemote) {
+            _gistStatus.lastError = result.status;
+            updateGistStatusUI();
+            return result;
           }
-          const body = await r.json().catch(() => null);
-          if (!body || !body.files || !body.files[GIST_FILE]) throw new Error('Antwort ohne erwartete Gist-Datei.');
+          S = pushedState;
           _gistStatus.lastPush = syncTs;
           _gistStatus.lastError = '';
           rememberSuccessfulGistSyncFingerprint(S);
           save();
           updateGistStatusUI();
           alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
+          return Object.assign({}, result, { changedLocal: true });
         } catch (e) {
-          S._lastExported = prevLastExported;
-          S._lastGistPushAt = prevLastGistPushAt;
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
           alert('Gist-Push fehlgeschlagen: ' + e.message + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
+          return { status: 'error', direction: 'none', wroteRemote: false, changedLocal: false, error: e.message };
         }
       }
 
@@ -12415,17 +12498,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           alert('Passphrase erforderlich. Ohne Passphrase kann der verschlüsselte Gist-Sync nicht ausgeführt werden.');
           return;
         }
-        const prevLastExported = S._lastExported || '';
-        const prevLastGistPushAt = S._lastGistPushAt || '';
-        const prevLastGistPullAt = S._lastGistPullAt || '';
-        const prevStateSnapshot = JSON.parse(JSON.stringify(S || {}));
+        const originalState = JSON.parse(JSON.stringify(S || {}));
         try {
-          const r = await fetch('https://api.github.com/gists/' + C.gistId, {
-            headers: githubHeaders(C.gistToken, false)
-          });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const gist = await r.json();
-          const remoteRaw = await readGistFileJson(gist, GIST_FILE);
+          const initialSnapshot = await readRemoteGistSnapshot();
+          const remoteRaw = initialSnapshot.remoteRaw;
           let remotePayload = null;
           let pulledLegacyPlain = false;
           if (isRoadtripEncryptedGistPayload(remoteRaw)) {
@@ -12435,7 +12511,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
               _gistStatus.lastError = 'wrong-passphrase-or-invalid-gist';
               updateGistStatusUI();
               alert('Falsche Passphrase oder beschädigter Gist.');
-              return;
+              return { status: 'invalid-remote', direction: 'none', wroteRemote: false, changedLocal: false };
             }
           } else if (isLegacyPlainRoadtripGistPayload(remoteRaw)) {
             const proceedLegacy = confirm('Legacy-Klartext-Gist erkannt. Dieser Gist ist unverschlüsselt. Vor Migration ZIP-Backup empfohlen. Klartext-Gist einmalig lesen und danach verschlüsselt neu pushen?');
@@ -12444,7 +12520,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             pulledLegacyPlain = true;
           } else {
             alert('Unbekanntes Gist-Format. Kein Pull/Merge durchgeführt.');
-            return;
+            return { status: 'invalid-remote', direction: 'none', wroteRemote: false, changedLocal: false };
           }
           const remoteState = getGistPayloadState(remotePayload);
           if (!remoteState) throw new Error('Ungültiger Gist-State.');
@@ -12459,7 +12535,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
             save();
             updateGistStatusUI();
             alert('Gist und lokaler Stand sind bereits synchron.');
-            return;
+            return { status: 'already-synced', direction: 'none', wroteRemote: false, changedLocal: true };
           }
 
           const localHasUserData = hasRoadtripUserData(localStateSnapshot);
@@ -12481,40 +12557,29 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           else if (didChange && !needsPush) syncOutcome = 'remote-adopted';
           else if (localWinsWithoutMerge) syncOutcome = 'local-pushed';
 
-          if (didChange) S = mergedState;
-          ensureDefaults();
-          pruneDeletedIds();
-          S.projects = (S.projects || []).filter(p => !isDeleted(p.id));
-          S.features = (S.features || []).filter(f => !isDeleted(f.id));
-          S.notes = (S.notes || []).filter(n => !isDeleted(n.id));
-          S.analyses = (S.analyses || []).filter(a => !isDeleted(a.id));
-          S.chats = (S.chats || []).filter(c => !isDeleted(c.id));
-          S.importVersions = (S.importVersions || []).filter(v => !isDeleted(v.id));
-          S.unmatchedNotes = (S.unmatchedNotes || []).filter(n => !isDeleted(n.id));
           const pullTs = new Date().toISOString();
-          S._lastGistPullAt = pullTs;
-          _gistStatus.lastPull = pullTs;
-          _gistStatus.lastError = '';
-
+          let nextState = prepareStateForGistWrite(didChange ? mergedState : localStateSnapshot);
+          nextState._lastGistPullAt = pullTs;
+          let writeResult = null;
+          let syncTs = '';
           if (needsPush) {
-            const syncTs = new Date().toISOString();
-            S._lastExported = syncTs;
-            S._lastGistPushAt = syncTs;
-            const payload = buildGistPayload();
-            payload.exported = syncTs;
+            syncTs = new Date().toISOString();
+            nextState._lastExported = syncTs;
+            nextState._lastGistPushAt = syncTs;
+            const payload = { version: 1, exported: syncTs, state: nextState };
             const envelope = await encryptRoadtripGistPayload(payload, passphrase);
-            const w = await fetch('https://api.github.com/gists/' + C.gistId, {
-              method: 'PATCH',
-              headers: githubHeaders(C.gistToken, true),
-              body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(envelope, null, 2) } } })
-            });
-            if (!w.ok) {
-              const errText = await w.text().catch(() => '');
-              throw new Error('cloud-write: HTTP ' + w.status + (errText ? ': ' + errText.slice(0, 120) : ''));
+            writeResult = await writeGistAfterPreflight(initialSnapshot, envelope);
+            if (!writeResult.wroteRemote) {
+              _gistStatus.lastError = writeResult.status;
+              updateGistStatusUI();
+              return writeResult;
             }
-            _gistStatus.lastPush = syncTs;
           }
 
+          S = nextState;
+          _gistStatus.lastPull = pullTs;
+          if (writeResult && writeResult.wroteRemote) _gistStatus.lastPush = syncTs;
+          _gistStatus.lastError = '';
           rememberSuccessfulGistSyncFingerprint(S);
           if (didChange || needsPush) save();
           renderAll();
@@ -12525,18 +12590,20 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           else if (syncOutcome === 'local-pushed') alert('Lokaler Stand war neuer und wurde verschlüsselt in den Gist synchronisiert.');
           else if (syncOutcome === 'legacy-migrated') alert('Legacy-Klartext-Gist wurde übernommen und verschlüsselt migriert.');
           else alert('Lokale und Remote-Änderungen wurden gemergt und verschlüsselt synchronisiert.');
+          return {
+            status: syncOutcome,
+            direction: needsPush ? 'push' : 'pull',
+            wroteRemote: !!needsPush,
+            changedLocal: didChange || needsPush
+          };
         } catch (e) {
-          if (String(e.message || '').startsWith('cloud-write:')) {
-            S = Object.assign(defaultState(), JSON.parse(JSON.stringify(prevStateSnapshot || {})));
-            ensureDefaults();
-          }
-          S._lastExported = prevLastExported;
-          S._lastGistPushAt = prevLastGistPushAt;
-          S._lastGistPullAt = prevLastGistPullAt;
+          S = Object.assign(defaultState(), originalState);
+          ensureDefaults();
           _gistStatus.lastError = e.message.slice(0, 80);
           updateGistStatusUI();
-          if (String(e.message || '').startsWith('cloud-write:')) alert('Cloud-Schreibfehler: Lokaler Runtime-State wurde auf den vorherigen Stand zurückgesetzt.');
-          else alert('Sync fehlgeschlagen beim Abrufen des Gist.');
+          if (String(e.message || '').startsWith('cloud-write:')) alert('Cloud-Schreibfehler: Der lokale Runtime-State blieb unverändert. Bitte ZIP-Backup/JSON-Export als Recovery nutzen.');
+          else alert('Sync fehlgeschlagen beim Abrufen des Gist: ' + e.message);
+          return { status: 'error', direction: 'none', wroteRemote: false, changedLocal: false, error: e.message };
         }
       }
 
