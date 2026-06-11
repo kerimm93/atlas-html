@@ -158,9 +158,12 @@ async function runWithResponses(responses) {
   assert.equal(raw.calls.length, 2);
   assert.equal(raw.calls[1].options.method, 'GET');
   assert.equal(raw.calls[1].options.cache, 'no-store');
+  assert.equal(raw.calls[1].options.headers.Accept, 'application/json,text/plain,*/*');
   assert.equal(raw.calls[1].options.headers.Authorization, undefined);
   assert.equal(raw.calls[1].options.headers['Content-Type'], undefined);
-  assert.equal(raw.calls[1].options.headers['Cache-Control'], 'no-cache');
+  assert.equal(raw.calls[1].options.headers['Cache-Control'], undefined);
+  assert.equal(raw.calls[1].options.headers.Pragma, undefined);
+  assert.deepEqual(Object.keys(raw.calls[1].options.headers), ['Accept']);
 
   const rawMissing = await runWithResponses([
     response({ json: gistWithFile({ content: inlineContent, truncated: true }) })
