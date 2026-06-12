@@ -12047,6 +12047,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       let _gistPassphraseSession = '';
       let _gistRememberPassphraseForSession = false;
       let _gistStatus = { lastPush: '', lastPull: '', lastError: '' };
+      let _syncInProgress = false;
 
 
       function roadtripBytesToBase64(bytes) {
@@ -12342,30 +12343,52 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function createGistPreflightSnapshot(overrides) {
-        return Object.assign({
+        const source = overrides || {};
+        const snapshot = Object.assign({
           ok: false,
           status: 'error',
           remoteKind: 'none',
+          gistId: '',
+          expectedFilename: GIST_FILE,
+          filePresent: false,
+          usedRawUrl: false,
           httpStatus: 0,
           errorCode: '',
           warnings: [],
           revision: '',
           etag: '',
           updatedAt: '',
-          contentFingerprint: ''
-        }, overrides || {});
+          contentFingerprint: '',
+          payloadFingerprint: ''
+        }, source);
+        if (Object.prototype.hasOwnProperty.call(source, 'json')) {
+          const json = source.json;
+          delete snapshot.json;
+          Object.defineProperty(snapshot, 'json', { value: json, enumerable: false, configurable: true });
+        }
+        return snapshot;
       }
 
       function createGistSyncOutcome(overrides) {
-        return Object.assign({
+        const outcome = Object.assign({
+          ok: false,
           status: 'error',
+          type: 'gist-sync',
+          message: '',
+          details: {},
           direction: 'none',
+          shouldMutateState: false,
+          shouldPatchRemote: false,
           wroteRemote: false,
           changedLocal: false,
           remoteKind: 'none',
           warnings: [],
           errorCode: ''
         }, overrides || {});
+        outcome.ok = outcome.ok || outcome.status === 'success' || outcome.status === 'no-op' || outcome.status === 'pulled' || outcome.status === 'synced' || outcome.status === 'initialized-remote' || outcome.status === 'legacy-migrated';
+        outcome.shouldMutateState = outcome.changedLocal || outcome.wroteRemote;
+        outcome.shouldPatchRemote = outcome.wroteRemote;
+        return outcome;
       }
 
       function compareGistPreflightSnapshots(before, after) {
@@ -12382,7 +12405,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function isEmptyGistPreflightSnapshot(snapshot) {
-        return !!(snapshot && !snapshot.ok && (snapshot.errorCode === 'gist-file-empty' || snapshot.errorCode === 'gist-file-missing'));
+        return !!(snapshot && !snapshot.ok && snapshot.errorCode === 'gist-file-empty');
       }
 
       function decideGistSyncMatrix(localState, remoteState, remoteSnapshot) {
@@ -12404,9 +12427,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function gistPreflightHttpFailure(httpStatus) {
-        if (httpStatus === 401) return { status: 'authentication-error', errorCode: 'gist-authentication-failed' };
-        if (httpStatus === 403) return { status: 'permission-or-rate-limit-error', errorCode: 'gist-permission-or-rate-limit' };
-        if (httpStatus === 404) return { status: 'not-found-or-inaccessible', errorCode: 'gist-not-found-or-inaccessible' };
+        if (httpStatus === 401) return { status: 'http-401', errorCode: 'gist-authentication-failed' };
+        if (httpStatus === 403) return { status: 'http-403', errorCode: 'gist-permission-or-rate-limit' };
+        if (httpStatus === 404) return { status: 'http-404', errorCode: 'gist-not-found-or-inaccessible' };
         return { status: 'http-error', errorCode: 'gist-http-error' };
       }
 
@@ -12418,6 +12441,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'gist-file-missing': 'Der Gist enthält nicht die erwartete Datei roadtrip_data.json.',
           'gist-file-empty': 'Die erwartete Gist-Datei ist leer.',
           'gist-file-invalid-json': 'Die erwartete Gist-Datei enthält kein gültiges JSON.',
+          'gist-format-unsupported': 'Die erwartete Gist-Datei enthält kein unterstütztes Atlas-/Roadtrip-Sync-Format.',
+          'gist-state-invalid': 'Die erwartete Gist-Datei enthält keinen gültigen synchronisierbaren State.',
+          'wrong-passphrase-or-invalid-gist': 'Die Passphrase ist falsch oder der verschlüsselte Gist ist beschädigt.',
           'gist-truncated-without-raw-url': 'Die Gist-Datei ist gekürzt, aber eine Raw-URL fehlt. Sync wurde sicher abgebrochen.',
           'gist-raw-fetch-failed': 'Die gekürzte Gist-Datei konnte nicht über die Raw-URL geladen werden. Sync wurde sicher abgebrochen.',
           'gist-raw-network-error': 'Die Raw-URL der gekürzten Gist-Datei war nicht erreichbar. Sync wurde sicher abgebrochen.',
@@ -12432,48 +12458,45 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         const gistId = String(opts.gistId || '');
         const token = String(opts.token || '');
         const fetchImpl = opts.fetch || globalThis.fetch;
-        const snapshot = createGistPreflightSnapshot();
-        if (!gistId || !token) return createGistPreflightSnapshot({ status: 'configuration-error', errorCode: 'gist-configuration-missing' });
+        const snapshot = createGistPreflightSnapshot({ gistId, expectedFilename: GIST_FILE });
+        if (!gistId || !token) return createGistPreflightSnapshot({ gistId, expectedFilename: GIST_FILE, status: 'configuration-error', errorCode: 'gist-configuration-missing' });
 
         let response;
         try {
-          const headers = Object.assign({}, githubHeaders(token, false), {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          });
           response = await fetchImpl('https://api.github.com/gists/' + encodeURIComponent(gistId), {
             method: 'GET',
-            cache: 'no-store',
-            headers
+            headers: githubHeaders(token, false)
           });
         } catch (err) {
-          return createGistPreflightSnapshot({ status: 'network-error', errorCode: 'gist-network-error' });
+          return createGistPreflightSnapshot({ gistId, expectedFilename: GIST_FILE, status: 'network-error', errorCode: 'gist-network-error' });
         }
 
         snapshot.httpStatus = Number(response.status) || 0;
         snapshot.etag = response.headers && typeof response.headers.get === 'function' ? String(response.headers.get('ETag') || '') : '';
-        if (!response.ok) return createGistPreflightSnapshot(Object.assign({ httpStatus: snapshot.httpStatus, etag: snapshot.etag }, gistPreflightHttpFailure(snapshot.httpStatus)));
+        if (!response.ok) return createGistPreflightSnapshot(Object.assign(snapshot, gistPreflightHttpFailure(snapshot.httpStatus)));
 
         let gist;
         try {
           gist = await response.json();
         } catch (err) {
-          return createGistPreflightSnapshot({ status: 'invalid-response', httpStatus: snapshot.httpStatus, errorCode: 'gist-response-invalid', etag: snapshot.etag });
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'invalid-response', errorCode: 'gist-response-invalid' }));
         }
         if (!gist || typeof gist !== 'object' || Array.isArray(gist)) {
-          return createGistPreflightSnapshot({ status: 'invalid-response', httpStatus: snapshot.httpStatus, errorCode: 'gist-response-invalid', etag: snapshot.etag });
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'invalid-response', errorCode: 'gist-response-invalid' }));
         }
 
         snapshot.revision = String(gist.history && gist.history[0] && gist.history[0].version || '');
         snapshot.updatedAt = typeof gist.updated_at === 'string' ? gist.updated_at : '';
         const fileObj = gist.files && typeof gist.files === 'object' && !Array.isArray(gist.files) ? gist.files[GIST_FILE] : null;
         if (!fileObj || typeof fileObj !== 'object') {
-          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'missing-file', errorCode: 'gist-file-missing' }));
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'missing-file', filePresent: false, errorCode: 'gist-file-missing' }));
         }
+        snapshot.filePresent = true;
 
         let content;
         if (fileObj.truncated === true) {
           snapshot.remoteKind = 'raw';
+          snapshot.usedRawUrl = true;
           snapshot.warnings.push('gist-file-truncated');
           if (!fileObj.raw_url || typeof fileObj.raw_url !== 'string') {
             return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'raw-url-missing', errorCode: 'gist-truncated-without-raw-url' }));
@@ -12482,10 +12505,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           try {
             rawResponse = await fetchImpl(fileObj.raw_url, {
               method: 'GET',
-              cache: 'no-store',
-              headers: {
-                'Accept': 'application/json,text/plain,*/*'
-              }
+              headers: githubHeaders(token, false)
             });
           } catch (err) {
             return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'raw-network-error', errorCode: 'gist-raw-network-error' }));
@@ -12509,7 +12529,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
 
         if (typeof content !== 'string' || !content.trim()) {
-          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'empty-file', errorCode: 'gist-file-empty' }));
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'empty', errorCode: 'gist-file-empty' }));
         }
 
         let json;
@@ -12525,11 +12545,26 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         } catch (err) {
           return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'fingerprint-error', errorCode: 'gist-content-fingerprint-failed' }));
         }
+        snapshot.contentFingerprint = contentFingerprint;
+        if (!isRoadtripEncryptedGistPayload(json) && !isLegacyPlainRoadtripGistPayload(json)) {
+          return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'invalid-envelope', errorCode: 'gist-format-unsupported' }));
+        }
+        if (isRoadtripEncryptedGistPayload(json) && opts.passphrase) {
+          try {
+            const decryptedPayload = await decryptRoadtripGistPayload(json, opts.passphrase);
+            const decryptedState = getGistPayloadState(decryptedPayload);
+            if (!decryptedState || !hasRoadtripStateShape(decryptedState)) {
+              return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'invalid-envelope', errorCode: 'gist-state-invalid' }));
+            }
+            snapshot.payloadFingerprint = await fingerprintGistContent(createGistSyncFingerprint(decryptedState), opts.crypto);
+          } catch (err) {
+            return createGistPreflightSnapshot(Object.assign(snapshot, { status: 'wrong-passphrase', errorCode: 'wrong-passphrase-or-invalid-gist' }));
+          }
+        }
         return createGistPreflightSnapshot(Object.assign(snapshot, {
           ok: true,
-          status: 'ready',
+          status: snapshot.usedRawUrl ? 'truncated-loaded' : 'ok',
           errorCode: '',
-          contentFingerprint,
           json
         }));
       }
@@ -12539,6 +12574,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         if (httpStatus === 403) return 'gist-patch-permission-or-rate-limit';
         if (httpStatus === 404) return 'gist-patch-not-found-or-inaccessible';
         return 'gist-patch-failed';
+      }
+
+      function isStrongGistEtag(etag) {
+        return /^"[^"]+"$/.test(String(etag || ''));
       }
 
       async function safePatchGistRemote(options) {
@@ -12561,7 +12600,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           });
         }
 
-        if (!writeSnapshot.etag) {
+        if (!isStrongGistEtag(writeSnapshot.etag)) {
           return createGistSyncOutcome({
             status: 'write-error',
             remoteKind: writeSnapshot.remoteKind,
@@ -12632,7 +12671,23 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return messages[errorCode] || 'Gist-Sync fehlgeschlagen.';
       }
 
-      async function gistPush() {
+      async function runGistSyncGuard(operation) {
+        if (_syncInProgress) {
+          return createGistSyncOutcome({
+            status: 'sync-in-progress',
+            message: 'Eine Gist-Synchronisation läuft bereits.',
+            errorCode: 'sync-in-progress'
+          });
+        }
+        _syncInProgress = true;
+        try {
+          return await operation();
+        } finally {
+          _syncInProgress = false;
+        }
+      }
+
+      async function gistPushOperation() {
         if (!C.gistId || !C.gistToken) {
           alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
           return createGistSyncOutcome({ status: 'configuration-error', errorCode: 'gist-configuration-missing' });
@@ -12645,7 +12700,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           return createGistSyncOutcome({ status: 'passphrase-required', errorCode: 'gist-passphrase-required' });
         }
 
-        const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken });
+        const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken, passphrase });
         if (!initialSnapshot.ok && !isEmptyGistPreflightSnapshot(initialSnapshot)) {
           _gistStatus.lastError = initialSnapshot.errorCode;
           updateGistStatusUI();
@@ -12694,7 +12749,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return outcome;
       }
 
-      async function gistSync() {
+      async function gistPush() {
+        return runGistSyncGuard(gistPushOperation);
+      }
+
+      async function gistSyncOperation() {
         if (!C.gistId || !C.gistToken) {
           alert('Bitte zuerst Gist ID und GitHub Token in den Settings eintragen.');
           return createGistSyncOutcome({ status: 'configuration-error', errorCode: 'gist-configuration-missing' });
@@ -12705,7 +12764,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           return createGistSyncOutcome({ status: 'passphrase-required', errorCode: 'gist-passphrase-required' });
         }
 
-        const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken });
+        const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken, passphrase });
         const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
         const localHasUserData = hasRoadtripUserData(localStateSnapshot);
         if (isEmptyGistPreflightSnapshot(initialSnapshot)) {
@@ -12840,6 +12899,10 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         updateGistStatusUI();
         alert(pulledLegacyPlain ? 'Legacy-Klartext-Gist wurde übernommen und verschlüsselt migriert.' : 'Lokale und Remote-Änderungen wurden gemergt und verschlüsselt synchronisiert.');
         return createGistSyncOutcome(Object.assign({}, writeOutcome, { status: pulledLegacyPlain ? 'legacy-migrated' : 'synced', direction: didChange ? 'merge' : 'push', changedLocal: didChange }));
+      }
+
+      async function gistSync() {
+        return runGistSyncGuard(gistSyncOperation);
       }
 
       async function gistPull() { return gistSync(); }
