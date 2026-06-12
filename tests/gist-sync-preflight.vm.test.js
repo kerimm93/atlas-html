@@ -32,6 +32,7 @@ const instrumentedScript = inlineScript
         rememberSuccessfulGistSyncFingerprint,
         gistSync,
         gistPush,
+        isSyncInProgress() { return _syncInProgress; },
         setState(value) { S = JSON.parse(JSON.stringify(value)); ensureDefaults(); },
         getState() { return JSON.parse(JSON.stringify(S)); },
         getStatus() { return JSON.parse(JSON.stringify(_gistStatus)); },
@@ -150,18 +151,15 @@ async function preflightFromResponse(fetchResponse) {
 }
 
 (async () => {
-  assert.match(String(api.gistSync), /safePatchGistRemote/);
-  assert.equal((String(api.gistSync).match(/rememberSuccessfulGistSyncFingerprint/g) || []).length, 2);
-  assert.match(String(api.gistPush), /safePatchGistRemote/);
   assert.deepEqual(
     Object.keys(api.createGistSyncOutcome()).sort(),
-    ['changedLocal', 'direction', 'errorCode', 'remoteKind', 'status', 'warnings', 'wroteRemote'].sort()
+    ['changedLocal', 'details', 'direction', 'errorCode', 'message', 'ok', 'remoteKind', 'shouldMutateState', 'shouldPatchRemote', 'status', 'type', 'warnings', 'wroteRemote'].sort()
   );
 
   for (const [status, expectedStatus, errorCode] of [
-    [401, 'authentication-error', 'gist-authentication-failed'],
-    [403, 'permission-or-rate-limit-error', 'gist-permission-or-rate-limit'],
-    [404, 'not-found-or-inaccessible', 'gist-not-found-or-inaccessible']
+    [401, 'http-401', 'gist-authentication-failed'],
+    [403, 'http-403', 'gist-permission-or-rate-limit'],
+    [404, 'http-404', 'gist-not-found-or-inaccessible']
   ]) {
     const queued = queuedFetch([response({ status, bodyReadMustFail: true })]);
     const result = await api.preflightGistRemote({ gistId, token, fetch: queued.fetch, crypto: webcrypto });
@@ -170,29 +168,45 @@ async function preflightFromResponse(fetchResponse) {
     assert.equal(result.status, expectedStatus);
     assert.equal(result.errorCode, errorCode);
     assert.equal(queued.calls[0].options.method, 'GET');
-    assert.equal(queued.calls[0].options.cache, 'no-store');
+    assert.equal(queued.calls[0].options.cache, undefined);
+    assert.deepEqual(Object.keys(queued.calls[0].options.headers).sort(), ['Accept', 'Authorization'].sort());
     assert.equal(queued.calls[0].options.headers.Authorization, `token ${token}`);
+    assert.equal(queued.calls[0].options.headers['Cache-Control'], undefined);
+    assert.equal(queued.calls[0].options.headers.Pragma, undefined);
     assert.equal(queued.calls[0].options.headers['Content-Type'], undefined);
     assert.equal(JSON.stringify(result).includes(token), false);
   }
 
   const missing = await preflightFromResponse(response({ json: gistWithFile(null, { files: { decoy: { content: '{"unsafe":true}' } } }) }));
+  assert.equal(missing.status, 'missing-file');
   assert.equal(missing.errorCode, 'gist-file-missing');
+  assert.equal(missing.gistId, gistId);
+  assert.equal(missing.expectedFilename, api.GIST_FILE);
+  assert.equal(missing.filePresent, false);
+  assert.equal(missing.json, undefined);
   const empty = await preflightFromResponse(response({ json: gistWithFile({ content: '   ', truncated: false }) }));
   assert.equal(empty.errorCode, 'gist-file-empty');
   const invalid = await preflightFromResponse(response({ json: gistWithFile({ content: '{broken', truncated: false }) }));
   assert.equal(invalid.errorCode, 'gist-file-invalid-json');
 
-  const inlineContent = JSON.stringify({ expected: true });
+  const invalidEnvelope = await preflightFromResponse(response({ json: gistWithFile({ content: JSON.stringify({ unrelated: true }), truncated: false }) }));
+  assert.equal(invalidEnvelope.status, 'invalid-envelope');
+  assert.equal(invalidEnvelope.errorCode, 'gist-format-unsupported');
+
+  const inlineContent = JSON.stringify({ version: 1, state: activeState('expected') });
   const inlineResponse = response({ json: gistWithFile({ content: inlineContent, truncated: false }), responseHeaders: { ETag: '"etag-123"' } });
   const inline = await preflightFromResponse(inlineResponse);
   assert.equal(inline.ok, true);
+  assert.equal(inline.status, 'ok');
   assert.equal(inline.remoteKind, 'inline');
+  assert.equal(inline.filePresent, true);
+  assert.equal(inline.usedRawUrl, false);
   assert.match(inline.contentFingerprint, /^sha256:[a-f0-9]{64}$/);
-  assert.equal(inline.json.expected, true);
+  assert.equal(inline.json.state.projects[0].id, 'expected');
   assert.equal(inline.json.unsafe, undefined);
+  assert.equal(JSON.stringify(inline).includes('\"id\":\"expected\"'), false);
 
-  const rawContent = JSON.stringify({ fromRaw: true });
+  const rawContent = JSON.stringify({ version: 1, state: activeState('from-raw') });
   const rawQueue = queuedFetch([
     response({ json: gistWithFile({ content: '{must-not-be-used}', truncated: true, raw_url: 'https://gist.githubusercontent.test/raw/file' }) }),
     response({ text: rawContent })
@@ -200,12 +214,18 @@ async function preflightFromResponse(fetchResponse) {
   const raw = await api.preflightGistRemote({ gistId, token, fetch: rawQueue.fetch, crypto: webcrypto });
   rawQueue.assertDone();
   assert.equal(raw.ok, true);
+  assert.equal(raw.status, 'truncated-loaded');
   assert.equal(raw.remoteKind, 'raw');
+  assert.equal(raw.usedRawUrl, true);
   assert.deepEqual(Array.from(raw.warnings), ['gist-file-truncated', 'gist-raw-url-resolved']);
-  assert.equal(rawQueue.calls[1].options.headers.Authorization, undefined);
+  assert.equal(rawQueue.calls[1].options.cache, undefined);
+  assert.deepEqual(Object.keys(rawQueue.calls[1].options.headers).sort(), ['Accept', 'Authorization'].sort());
+  assert.equal(rawQueue.calls[1].options.headers.Authorization, `token ${token}`);
+  assert.equal(rawQueue.calls[1].options.headers['Cache-Control'], undefined);
+  assert.equal(rawQueue.calls[1].options.headers.Pragma, undefined);
 
   const baseSnapshot = api.createGistPreflightSnapshot({
-    ok: true, status: 'ready', remoteKind: 'inline', revision: 'r1', etag: 'e1', updatedAt: 't1', contentFingerprint: 'sha256:a'
+    ok: true, status: 'ok', remoteKind: 'inline', revision: 'r1', etag: 'e1', updatedAt: 't1', contentFingerprint: 'sha256:a'
   });
   assert.equal(api.compareGistPreflightSnapshots(baseSnapshot, { ...baseSnapshot }).changed, false);
   for (const [field, value] of [
@@ -230,6 +250,9 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(writeOutcome.wroteRemote, true);
   assert.deepEqual(writeQueue.calls.map(call => call.options.method), ['GET', 'PATCH']);
   assert.equal(writeQueue.calls[1].options.headers['If-Match'], '"etag-123"');
+  assert.equal(writeQueue.calls[1].options.headers['Content-Type'], 'application/json');
+  assert.equal(writeQueue.calls[1].options.headers.Authorization, `token ${token}`);
+  assert.equal(writeQueue.calls[1].options.headers.Accept, 'application/vnd.github+json');
 
   const conditionalConflictQueue = queuedFetch([stableGet, response({ status: 412, bodyReadMustFail: true })]);
   const conditionalConflict = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: inline, content: '{"encrypted":true}', fetch: conditionalConflictQueue.fetch, crypto: webcrypto });
@@ -249,8 +272,17 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(noEtagOutcome.wroteRemote, false);
   assert.deepEqual(noEtagQueue.calls.map(call => call.options.method), ['GET']);
 
+
+  const weakEtagGet = response({ json: gistWithFile({ content: inlineContent, truncated: false }), responseHeaders: { ETag: 'W/"weak-etag"' } });
+  const weakEtagSnapshot = await preflightFromResponse(weakEtagGet);
+  const weakEtagQueue = queuedFetch([weakEtagGet]);
+  const weakEtagOutcome = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: weakEtagSnapshot, content: '{"encrypted":true}', fetch: weakEtagQueue.fetch, crypto: webcrypto });
+  weakEtagQueue.assertDone();
+  assert.equal(weakEtagOutcome.errorCode, 'gist-write-precondition-unavailable');
+  assert.deepEqual(weakEtagQueue.calls.map(call => call.options.method), ['GET']);
+
   const changedGet = response({
-    json: gistWithFile({ content: JSON.stringify({ changed: true }), truncated: false }, { history: [{ version: 'revision-999' }] }),
+    json: gistWithFile({ content: JSON.stringify({ version: 1, state: activeState('changed') }), truncated: false }, { history: [{ version: 'revision-999' }] }),
     responseHeaders: { ETag: '"etag-999"' }
   });
   const conflictQueue = queuedFetch([changedGet]);
@@ -272,6 +304,48 @@ async function preflightFromResponse(fetchResponse) {
   const identicalState = activeState('identical');
   api.setConfig({ gistId, gistToken: token });
   api.setPassphrase(passphrase);
+  const fingerprintEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: activeState('fingerprinted') }, passphrase);
+  const fingerprintQueue = queuedFetch([
+    response({ json: gistWithFile({ content: JSON.stringify(fingerprintEnvelope), truncated: false }), responseHeaders: { ETag: '"fingerprint-etag"' } })
+  ]);
+  const fingerprintSnapshot = await api.preflightGistRemote({ gistId, token, passphrase, fetch: fingerprintQueue.fetch, crypto: webcrypto });
+  fingerprintQueue.assertDone();
+  assert.equal(fingerprintSnapshot.status, 'ok');
+  assert.match(fingerprintSnapshot.payloadFingerprint, /^sha256:[a-f0-9]{64}$/);
+
+  const wrongPassphraseQueue = queuedFetch([
+    response({ json: gistWithFile({ content: JSON.stringify(fingerprintEnvelope), truncated: false }), responseHeaders: { ETag: '"fingerprint-etag"' } })
+  ]);
+  const wrongPassphraseSnapshot = await api.preflightGistRemote({ gistId, token, passphrase: 'synthetic-wrong-passphrase', fetch: wrongPassphraseQueue.fetch, crypto: webcrypto });
+  wrongPassphraseQueue.assertDone();
+  assert.equal(wrongPassphraseSnapshot.status, 'wrong-passphrase');
+  assert.equal(wrongPassphraseSnapshot.errorCode, 'wrong-passphrase-or-invalid-gist');
+  assert.equal(wrongPassphraseSnapshot.payloadFingerprint, '');
+
+  const protectedState = { ...activeState('protected-local'), _lastExported: 'unchanged-export' };
+  api.setState(protectedState);
+  const missingSyncQueue = queuedFetch([
+    response({ json: gistWithFile(null, { files: { decoy: { content: JSON.stringify(activeState('decoy')) } } }), responseHeaders: { ETag: '"missing-etag"' } })
+  ]);
+  context.fetch = missingSyncQueue.fetch;
+  const missingSyncOutcome = await api.gistSync();
+  missingSyncQueue.assertDone();
+  assert.equal(missingSyncOutcome.errorCode, 'gist-file-missing');
+  assert.equal(missingSyncOutcome.wroteRemote, false);
+  assert.deepEqual(missingSyncQueue.calls.map(call => call.options.method), ['GET']);
+  assert.equal(api.getState().projects[0].id, 'protected-local');
+  assert.equal(api.getState()._lastExported, 'unchanged-export');
+
+  const invalidJsonQueue = queuedFetch([
+    response({ json: gistWithFile({ content: '{corrupt', truncated: false }), responseHeaders: { ETag: '"invalid-etag"' } })
+  ]);
+  context.fetch = invalidJsonQueue.fetch;
+  const invalidJsonOutcome = await api.gistSync();
+  invalidJsonQueue.assertDone();
+  assert.equal(invalidJsonOutcome.errorCode, 'gist-file-invalid-json');
+  assert.equal(invalidJsonOutcome.changedLocal, false);
+  assert.equal(api.getState().projects[0].id, 'protected-local');
+
   api.setState(identicalState);
   const normalizedIdenticalState = api.getState();
   const identicalEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: normalizedIdenticalState }, passphrase);
@@ -311,6 +385,25 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(api.getSyncFingerprint(), '');
   assert.equal(JSON.stringify(api.getStatus()).includes(responseSecret), false);
   assert.equal(alerts.some(message => message.includes(responseSecret) || message.includes(token)), false);
+
+  let releaseFetch;
+  const blockedFetch = new Promise(resolve => { releaseFetch = resolve; });
+  context.fetch = async (url, options = {}) => {
+    assert.equal(options.method, 'GET');
+    return blockedFetch;
+  };
+  api.setState(activeState('guarded'));
+  const runningSync = api.gistSync();
+  await Promise.resolve();
+  assert.equal(api.isSyncInProgress(), true);
+  const blockedPush = await api.gistPush();
+  assert.equal(blockedPush.status, 'sync-in-progress');
+  assert.equal(blockedPush.errorCode, 'sync-in-progress');
+  releaseFetch(response({ status: 401, bodyReadMustFail: true }));
+  const finishedSync = await runningSync;
+  assert.equal(finishedSync.errorCode, 'gist-authentication-failed');
+  assert.equal(api.getState().projects[0].id, 'guarded');
+  assert.equal(api.isSyncInProgress(), false);
 
   const firstPulledState = activeState('timestamp-free-first');
   delete firstPulledState.projects[0].createdAt;
