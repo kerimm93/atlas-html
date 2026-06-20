@@ -164,7 +164,8 @@ function queuedFetch(responses) {
   const fetch = async (url, options = {}) => {
     calls.push({ url, options });
     assert.ok(queue.length, `Unerwarteter zusätzlicher Fetch-Aufruf: ${options.method || 'GET'} ${url}`);
-    return queue.shift();
+    const next = queue.shift();
+    return typeof next === 'function' ? next(url, options, calls) : next;
   };
   return { fetch, calls, assertDone() { assert.equal(queue.length, 0, 'Nicht alle erwarteten Fetch-Antworten wurden verwendet.'); } };
 }
@@ -400,6 +401,46 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(api.getState()._lastExported, 'race-export');
   assert.equal(api.getState()._lastGistPushAt, 'race-push');
 
+  api.setState(activeState('prepatch-local'));
+  const remotePrePatchEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: activeState('remote-before-local-change') }, passphrase);
+  const prePatchLocalChangeQueue = queuedFetch([
+    response({ json: gistWithFile({ content: JSON.stringify(remotePrePatchEnvelope), truncated: false }), responseHeaders: { ETag: '"prepatch-etag"' } }),
+    () => {
+      api.setState(activeState('prepatch-new-local'));
+      return response({ json: gistWithFile({ content: JSON.stringify(remotePrePatchEnvelope), truncated: false }), responseHeaders: { ETag: '"prepatch-etag"' } });
+    }
+  ]);
+  context.fetch = prePatchLocalChangeQueue.fetch;
+  const prePatchLocalChangeOutcome = await api.gistPush();
+  prePatchLocalChangeQueue.assertDone();
+  assert.equal(prePatchLocalChangeOutcome.status, 'local-changed-during-push');
+  assert.equal(prePatchLocalChangeOutcome.errorCode, 'local-changed-during-push');
+  assert.equal(prePatchLocalChangeOutcome.wroteRemote, false);
+  assert.deepEqual(prePatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET']);
+  assert.equal(api.getState().projects[0].id, 'prepatch-new-local');
+
+  api.setState(activeState('postpatch-local'));
+  const remotePostPatchEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: activeState('remote-before-postpatch-change') }, passphrase);
+  const postPatchLocalChangeQueue = queuedFetch([
+    response({ json: gistWithFile({ content: JSON.stringify(remotePostPatchEnvelope), truncated: false }), responseHeaders: { ETag: '"postpatch-etag"' } }),
+    response({ json: gistWithFile({ content: JSON.stringify(remotePostPatchEnvelope), truncated: false }), responseHeaders: { ETag: '"postpatch-etag"' } }),
+    () => {
+      api.setState(activeState('postpatch-new-local'));
+      return response({ status: 200, json: gistWithFile({ content: '{}' }) });
+    }
+  ]);
+  context.fetch = postPatchLocalChangeQueue.fetch;
+  const postPatchLocalChangeOutcome = await api.gistPush();
+  postPatchLocalChangeQueue.assertDone();
+  assert.equal(postPatchLocalChangeOutcome.status, 'local-changed-after-push');
+  assert.equal(postPatchLocalChangeOutcome.errorCode, 'local-changed-during-push');
+  assert.equal(postPatchLocalChangeOutcome.wroteRemote, true);
+  assert.deepEqual(postPatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET', 'PATCH']);
+  assert.equal(api.getState().projects[0].id, 'postpatch-new-local');
+  assert.equal(api.getState()._lastExported || '', '');
+  assert.equal(api.getState()._lastGistPushAt || '', '');
+  assert.ok(alerts.some(message => message.includes('Lokale Änderungen bleiben lokal')));
+
   const invalidJsonQueue = queuedFetch([
     response({ json: gistWithFile({ content: '{corrupt', truncated: false }), responseHeaders: { ETag: '"invalid-etag"' } })
   ]);
@@ -408,7 +449,7 @@ async function preflightFromResponse(fetchResponse) {
   invalidJsonQueue.assertDone();
   assert.equal(invalidJsonOutcome.errorCode, 'gist-file-invalid-json');
   assert.equal(invalidJsonOutcome.changedLocal, false);
-  assert.equal(api.getState().projects[0].id, 'race-local');
+  assert.equal(api.getState().projects[0].id, 'postpatch-new-local');
 
   api.setState(identicalState);
   const normalizedIdenticalState = api.getState();
