@@ -291,22 +291,45 @@ async function preflightFromResponse(fetchResponse) {
 
   const noEtagGet = response({ json: gistWithFile({ content: inlineContent, truncated: false }) });
   const noEtagSnapshot = await preflightFromResponse(noEtagGet);
-  const noEtagQueue = queuedFetch([noEtagGet]);
+  const noEtagQueue = queuedFetch([noEtagGet, response({ status: 200, json: gistWithFile({ content: inlineContent }) })]);
   const noEtagOutcome = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: noEtagSnapshot, content: '{"encrypted":true}', fetch: noEtagQueue.fetch, crypto: webcrypto });
   noEtagQueue.assertDone();
-  assert.equal(noEtagOutcome.status, 'write-error');
-  assert.equal(noEtagOutcome.errorCode, 'gist-write-precondition-unavailable');
-  assert.equal(noEtagOutcome.wroteRemote, false);
-  assert.deepEqual(noEtagQueue.calls.map(call => call.options.method), ['GET']);
-
+  assert.equal(noEtagOutcome.status, 'success');
+  assert.equal(noEtagOutcome.wroteRemote, true);
+  assert.deepEqual(noEtagQueue.calls.map(call => call.options.method), ['GET', 'PATCH']);
+  assert.equal(noEtagQueue.calls[1].options.headers['If-Match'], undefined);
+  assert.equal(noEtagQueue.calls[1].options.headers['Content-Type'], 'application/json');
+  assert.ok(noEtagOutcome.warnings.includes('client-side-precondition-only'));
 
   const weakEtagGet = response({ json: gistWithFile({ content: inlineContent, truncated: false }), responseHeaders: { ETag: 'W/"weak-etag"' } });
   const weakEtagSnapshot = await preflightFromResponse(weakEtagGet);
-  const weakEtagQueue = queuedFetch([weakEtagGet]);
+  const weakEtagQueue = queuedFetch([weakEtagGet, response({ status: 200, json: gistWithFile({ content: inlineContent }) })]);
   const weakEtagOutcome = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: weakEtagSnapshot, content: '{"encrypted":true}', fetch: weakEtagQueue.fetch, crypto: webcrypto });
   weakEtagQueue.assertDone();
-  assert.equal(weakEtagOutcome.errorCode, 'gist-write-precondition-unavailable');
-  assert.deepEqual(weakEtagQueue.calls.map(call => call.options.method), ['GET']);
+  assert.equal(weakEtagOutcome.status, 'success');
+  assert.equal(weakEtagQueue.calls[1].options.headers['If-Match'], undefined);
+  assert.ok(weakEtagOutcome.warnings.includes('client-side-precondition-only'));
+
+  const noPreconditionGet = response({ json: gistWithFile(null, { updated_at: undefined, history: [] }) });
+  const noPreconditionSnapshot = await preflightFromResponse(noPreconditionGet);
+  const noPreconditionQueue = queuedFetch([noPreconditionGet]);
+  const noPreconditionOutcome = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: noPreconditionSnapshot, content: '{"encrypted":true}', fetch: noPreconditionQueue.fetch, crypto: webcrypto });
+  noPreconditionQueue.assertDone();
+  assert.equal(noPreconditionOutcome.status, 'write-error');
+  assert.equal(noPreconditionOutcome.errorCode, 'gist-write-precondition-unavailable');
+  assert.equal(noPreconditionOutcome.wroteRemote, false);
+  assert.deepEqual(noPreconditionQueue.calls.map(call => call.options.method), ['GET']);
+
+  const noEtagRevisionChangedGet = response({
+    json: gistWithFile({ content: inlineContent, truncated: false }, { history: [{ version: 'revision-no-etag-2' }] })
+  });
+  const noEtagRevisionChangedQueue = queuedFetch([noEtagRevisionChangedGet]);
+  const noEtagRevisionChangedOutcome = await api.safePatchGistRemote({ gistId, token, expectedSnapshot: noEtagSnapshot, content: '{"encrypted":true}', fetch: noEtagRevisionChangedQueue.fetch, crypto: webcrypto });
+  noEtagRevisionChangedQueue.assertDone();
+  assert.equal(noEtagRevisionChangedOutcome.status, 'conflict');
+  assert.equal(noEtagRevisionChangedOutcome.errorCode, 'remote-changed-during-sync');
+  assert.equal(noEtagRevisionChangedOutcome.wroteRemote, false);
+  assert.deepEqual(noEtagRevisionChangedQueue.calls.map(call => call.options.method), ['GET']);
 
   const changedGet = response({
     json: gistWithFile({ content: JSON.stringify({ version: 1, state: activeState('changed') }), truncated: false }, { history: [{ version: 'revision-999' }] }),
@@ -365,8 +388,8 @@ async function preflightFromResponse(fetchResponse) {
 
   api.setState(activeState('initial-local'));
   const initialPushQueue = queuedFetch([
-    response({ json: gistWithFile(null, { files: { first_file_fallback_must_not_be_used: { content: JSON.stringify(activeState('decoy')) } } }), responseHeaders: { ETag: '"missing-etag"' } }),
-    response({ json: gistWithFile(null, { files: { first_file_fallback_must_not_be_used: { content: JSON.stringify(activeState('decoy')) } } }), responseHeaders: { ETag: '"missing-etag"' } }),
+    response({ json: gistWithFile(null, { files: { first_file_fallback_must_not_be_used: { content: JSON.stringify(activeState('decoy')) } } }) }),
+    response({ json: gistWithFile(null, { files: { first_file_fallback_must_not_be_used: { content: JSON.stringify(activeState('decoy')) } } }) }),
     response({ status: 200, json: gistWithFile({ content: '{}' }) })
   ]);
   context.fetch = initialPushQueue.fetch;
@@ -375,8 +398,9 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(initialPushOutcome.status, 'initialized-remote');
   assert.equal(initialPushOutcome.wroteRemote, true);
   assert.deepEqual(initialPushQueue.calls.map(call => call.options.method), ['GET', 'GET', 'PATCH']);
-  assert.equal(initialPushQueue.calls[2].options.headers['If-Match'], '"missing-etag"');
+  assert.equal(initialPushQueue.calls[2].options.headers['If-Match'], undefined);
   assert.equal(initialPushQueue.calls[2].options.headers['Content-Type'], 'application/json');
+  assert.ok(initialPushOutcome.warnings.includes('client-side-precondition-only'));
   const initialPatchBody = JSON.parse(initialPushQueue.calls[2].options.body);
   assert.deepEqual(Object.keys(initialPatchBody.files), [api.GIST_FILE]);
   assert.equal(initialPatchBody.files.first_file_fallback_must_not_be_used, undefined);

@@ -12580,6 +12580,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return /^"[^"]+"$/.test(String(etag || ''));
       }
 
+      function hasGistClientSideWritePrecondition(snapshot) {
+        const candidate = createGistPreflightSnapshot(snapshot);
+        return !!(candidate.revision || candidate.updatedAt || candidate.contentFingerprint || candidate.payloadFingerprint);
+      }
+
       async function safePatchGistRemote(options) {
         const opts = options && typeof options === 'object' ? options : {};
         const fetchImpl = opts.fetch || globalThis.fetch;
@@ -12600,7 +12605,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           });
         }
 
-        if (!isStrongGistEtag(writeSnapshot.etag)) {
+        const hasStrongEtag = isStrongGistEtag(writeSnapshot.etag);
+        const hasClientPrecondition = hasGistClientSideWritePrecondition(expectedSnapshot) && hasGistClientSideWritePrecondition(writeSnapshot);
+        if (!hasStrongEtag && !hasClientPrecondition) {
           return createGistSyncOutcome({
             status: 'write-error',
             remoteKind: writeSnapshot.remoteKind,
@@ -12617,7 +12624,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         let response;
         try {
           const patchHeaders = githubHeaders(String(opts.token || ''), true);
-          patchHeaders['If-Match'] = writeSnapshot.etag;
+          if (hasStrongEtag) patchHeaders['If-Match'] = writeSnapshot.etag;
           response = await fetchImpl('https://api.github.com/gists/' + encodeURIComponent(String(opts.gistId || '')), {
             method: 'PATCH',
             headers: patchHeaders,
@@ -12647,7 +12654,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           direction: 'push',
           wroteRemote: true,
           remoteKind: writeSnapshot.remoteKind,
-          warnings: (writeSnapshot.warnings || []).slice()
+          warnings: (hasStrongEtag ? [] : ['client-side-precondition-only']).concat(writeSnapshot.warnings || [])
         });
       }
 
