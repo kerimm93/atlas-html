@@ -46,14 +46,36 @@ assert.notEqual(instrumentedScript, inlineScript, 'Test-Hook konnte init() nicht
 
 const alerts = [];
 const confirmations = [];
+function elementStub() {
+  return {
+    hidden: false,
+    innerHTML: '',
+    textContent: '',
+    value: '',
+    checked: false,
+    disabled: false,
+    style: { setProperty() {} },
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    dataset: {},
+    addEventListener() {},
+    appendChild() {},
+    remove() {},
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    setAttribute() {},
+    removeAttribute() {}
+  };
+}
 const documentStub = {
-  getElementById() { return null; },
-  querySelector() { return null; },
+  getElementById() { return elementStub(); },
+  querySelector() { return elementStub(); },
   querySelectorAll() { return []; },
   addEventListener() {},
-  body: { classList: { add() {}, remove() {}, toggle() {} } },
+  createElement() { return elementStub(); },
+  body: { classList: { add() {}, remove() {}, toggle() {} }, appendChild() {} },
   documentElement: { style: { setProperty() {} } }
 };
+const localStorageStore = new Map();
 const context = {
   Blob,
   Date,
@@ -72,7 +94,11 @@ const context = {
   crypto: webcrypto,
   document: documentStub,
   fetch: async () => { throw new Error('fetch not configured'); },
-  localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+  localStorage: {
+    getItem(key) { return localStorageStore.has(String(key)) ? localStorageStore.get(String(key)) : null; },
+    setItem(key, value) { localStorageStore.set(String(key), String(value)); },
+    removeItem(key) { localStorageStore.delete(String(key)); }
+  },
   setTimeout,
   structuredClone
 };
@@ -336,6 +362,44 @@ async function preflightFromResponse(fetchResponse) {
   assert.equal(api.getState().projects[0].id, 'protected-local');
   assert.equal(api.getState()._lastExported, 'unchanged-export');
 
+  api.setState(activeState('initial-local'));
+  const initialPushQueue = queuedFetch([
+    response({ json: gistWithFile(null, { files: { first_file_fallback_must_not_be_used: { content: JSON.stringify(activeState('decoy')) } } }), responseHeaders: { ETag: '"missing-etag"' } }),
+    response({ json: gistWithFile(null, { files: { first_file_fallback_must_not_be_used: { content: JSON.stringify(activeState('decoy')) } } }), responseHeaders: { ETag: '"missing-etag"' } }),
+    response({ status: 200, json: gistWithFile({ content: '{}' }) })
+  ]);
+  context.fetch = initialPushQueue.fetch;
+  const initialPushOutcome = await api.gistPush();
+  initialPushQueue.assertDone();
+  assert.equal(initialPushOutcome.status, 'initialized-remote');
+  assert.equal(initialPushOutcome.wroteRemote, true);
+  assert.deepEqual(initialPushQueue.calls.map(call => call.options.method), ['GET', 'GET', 'PATCH']);
+  assert.equal(initialPushQueue.calls[2].options.headers['If-Match'], '"missing-etag"');
+  assert.equal(initialPushQueue.calls[2].options.headers['Content-Type'], 'application/json');
+  const initialPatchBody = JSON.parse(initialPushQueue.calls[2].options.body);
+  assert.deepEqual(Object.keys(initialPatchBody.files), [api.GIST_FILE]);
+  assert.equal(initialPatchBody.files.first_file_fallback_must_not_be_used, undefined);
+  assert.equal(JSON.stringify(initialPatchBody).includes('initial-local'), false);
+  assert.equal(api.getState().projects[0].id, 'initial-local');
+  assert.ok(confirmations.some(message => message.includes('Sicherer Erst-Push')));
+
+  api.setState({ ...activeState('race-local'), _lastExported: 'race-export', _lastGistPushAt: 'race-push' });
+  const createdBetweenPreflightsEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: activeState('remote-created') }, passphrase);
+  const createdBetweenPreflightsQueue = queuedFetch([
+    response({ json: gistWithFile(null, { files: { decoy: { content: JSON.stringify(activeState('decoy')) } } }), responseHeaders: { ETag: '"race-etag-1"' } }),
+    response({ json: gistWithFile({ content: JSON.stringify(createdBetweenPreflightsEnvelope), truncated: false }), responseHeaders: { ETag: '"race-etag-2"' } })
+  ]);
+  context.fetch = createdBetweenPreflightsQueue.fetch;
+  const createdBetweenPreflightsOutcome = await api.gistPush();
+  createdBetweenPreflightsQueue.assertDone();
+  assert.equal(createdBetweenPreflightsOutcome.status, 'conflict');
+  assert.equal(createdBetweenPreflightsOutcome.errorCode, 'remote-changed-during-sync');
+  assert.equal(createdBetweenPreflightsOutcome.wroteRemote, false);
+  assert.deepEqual(createdBetweenPreflightsQueue.calls.map(call => call.options.method), ['GET', 'GET']);
+  assert.equal(api.getState().projects[0].id, 'race-local');
+  assert.equal(api.getState()._lastExported, 'race-export');
+  assert.equal(api.getState()._lastGistPushAt, 'race-push');
+
   const invalidJsonQueue = queuedFetch([
     response({ json: gistWithFile({ content: '{corrupt', truncated: false }), responseHeaders: { ETag: '"invalid-etag"' } })
   ]);
@@ -344,7 +408,7 @@ async function preflightFromResponse(fetchResponse) {
   invalidJsonQueue.assertDone();
   assert.equal(invalidJsonOutcome.errorCode, 'gist-file-invalid-json');
   assert.equal(invalidJsonOutcome.changedLocal, false);
-  assert.equal(api.getState().projects[0].id, 'protected-local');
+  assert.equal(api.getState().projects[0].id, 'race-local');
 
   api.setState(identicalState);
   const normalizedIdenticalState = api.getState();
@@ -366,6 +430,8 @@ async function preflightFromResponse(fetchResponse) {
 
   const localBeforeConflict = { ...activeState('local'), _lastExported: 'old-export', _lastGistPushAt: 'old-push' };
   api.setState(localBeforeConflict);
+  const lastPushBeforeSyncConflict = api.getStatus().lastPush;
+  const fingerprintBeforeSyncConflict = api.getSyncFingerprint();
   const initialEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: activeState('remote') }, passphrase);
   const changedEnvelope = await api.encryptRoadtripGistPayload({ version: 1, state: activeState('remote-new') }, passphrase);
   const syncConflictQueue = queuedFetch([
@@ -381,8 +447,8 @@ async function preflightFromResponse(fetchResponse) {
   const stateAfterConflict = api.getState();
   assert.equal(stateAfterConflict._lastExported, 'old-export');
   assert.equal(stateAfterConflict._lastGistPushAt, 'old-push');
-  assert.equal(api.getStatus().lastPush, '');
-  assert.equal(api.getSyncFingerprint(), '');
+  assert.equal(api.getStatus().lastPush, lastPushBeforeSyncConflict);
+  assert.equal(api.getSyncFingerprint(), fingerprintBeforeSyncConflict);
   assert.equal(JSON.stringify(api.getStatus()).includes(responseSecret), false);
   assert.equal(alerts.some(message => message.includes(responseSecret) || message.includes(token)), false);
 

@@ -12701,6 +12701,38 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
 
         const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken, passphrase });
+        const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
+        if (!initialSnapshot.ok && initialSnapshot.errorCode === 'gist-file-missing') {
+          if (!hasRoadtripUserData(localStateSnapshot)) {
+            _gistStatus.lastError = initialSnapshot.errorCode;
+            updateGistStatusUI();
+            alert('Die erwartete Gist-Datei fehlt und der lokale Stand enthält keine initialisierbaren Daten. Es wurde nichts geschrieben.');
+            return createGistSyncOutcome({ status: 'preflight-error', remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings, errorCode: initialSnapshot.errorCode });
+          }
+          const initializeMissingFile = confirm('Die erwartete Gist-Datei roadtrip_data.json fehlt. Sicherer Erst-Push: Atlas legt nur diese Datei mit dem aktuellen lokalen Stand an, wenn ein zweiter Preflight weiterhin bestätigt, dass sie fehlt. Fortfahren?');
+          if (!initializeMissingFile) return createGistSyncOutcome({ status: 'preview-cancelled', remoteKind: initialSnapshot.remoteKind, errorCode: initialSnapshot.errorCode });
+          const syncTs = new Date().toISOString();
+          const stagedState = JSON.parse(JSON.stringify(localStateSnapshot));
+          stagedState._lastExported = syncTs;
+          stagedState._lastGistPushAt = syncTs;
+          const payload = { version: 1, exported: syncTs, state: stagedState };
+          const envelope = await encryptRoadtripGistPayload(payload, passphrase);
+          const outcome = await safePatchGistRemote({
+            gistId: C.gistId,
+            token: C.gistToken,
+            expectedSnapshot: initialSnapshot,
+            content: JSON.stringify(envelope, null, 2)
+          });
+          if (!outcome.wroteRemote) {
+            _gistStatus.lastError = outcome.errorCode;
+            updateGistStatusUI();
+            alert(gistSyncFailureMessage(outcome.errorCode) + ' Es wurde keine Gist-Datei initialisiert.');
+            return outcome;
+          }
+          applySuccessfulGistWrite(stagedState, syncTs);
+          alert('Gist-Datei roadtrip_data.json wurde nach zweitem Preflight verschlüsselt initialisiert: ' + formatDateTime(syncTs));
+          return createGistSyncOutcome(Object.assign({}, outcome, { status: 'initialized-remote' }));
+        }
         if (!initialSnapshot.ok && !isEmptyGistPreflightSnapshot(initialSnapshot)) {
           _gistStatus.lastError = initialSnapshot.errorCode;
           updateGistStatusUI();
@@ -12727,7 +12759,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
 
         const syncTs = new Date().toISOString();
-        const stagedState = JSON.parse(JSON.stringify(S || {}));
+        const stagedState = JSON.parse(JSON.stringify(localStateSnapshot));
         stagedState._lastExported = syncTs;
         stagedState._lastGistPushAt = syncTs;
         const payload = { version: 1, exported: syncTs, state: stagedState };
