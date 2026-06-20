@@ -12580,6 +12580,11 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         return /^"[^"]+"$/.test(String(etag || ''));
       }
 
+      function hasGistClientSideWritePrecondition(snapshot) {
+        const candidate = createGistPreflightSnapshot(snapshot);
+        return !!(candidate.revision || candidate.updatedAt || candidate.contentFingerprint || candidate.payloadFingerprint);
+      }
+
       async function safePatchGistRemote(options) {
         const opts = options && typeof options === 'object' ? options : {};
         const fetchImpl = opts.fetch || globalThis.fetch;
@@ -12600,7 +12605,9 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           });
         }
 
-        if (!isStrongGistEtag(writeSnapshot.etag)) {
+        const hasStrongEtag = isStrongGistEtag(writeSnapshot.etag);
+        const hasClientPrecondition = hasGistClientSideWritePrecondition(expectedSnapshot) && hasGistClientSideWritePrecondition(writeSnapshot);
+        if (!hasStrongEtag && !hasClientPrecondition) {
           return createGistSyncOutcome({
             status: 'write-error',
             remoteKind: writeSnapshot.remoteKind,
@@ -12609,10 +12616,15 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           });
         }
 
+        if (typeof opts.beforePatch === 'function') {
+          const guardOutcome = opts.beforePatch(writeSnapshot);
+          if (guardOutcome) return createGistSyncOutcome(guardOutcome);
+        }
+
         let response;
         try {
           const patchHeaders = githubHeaders(String(opts.token || ''), true);
-          patchHeaders['If-Match'] = writeSnapshot.etag;
+          if (hasStrongEtag) patchHeaders['If-Match'] = writeSnapshot.etag;
           response = await fetchImpl('https://api.github.com/gists/' + encodeURIComponent(String(opts.gistId || '')), {
             method: 'PATCH',
             headers: patchHeaders,
@@ -12642,8 +12654,20 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           direction: 'push',
           wroteRemote: true,
           remoteKind: writeSnapshot.remoteKind,
-          warnings: (writeSnapshot.warnings || []).slice()
+          warnings: (hasStrongEtag ? [] : ['client-side-precondition-only']).concat(writeSnapshot.warnings || [])
         });
+      }
+
+      function hasLocalStateChangedSinceSnapshot(localStateSnapshot) {
+        return !areStatesSyncEquivalent(S || {}, localStateSnapshot || {});
+      }
+
+      function localChangedDuringPushOutcome(overrides) {
+        const outcome = Object.assign({}, overrides || {});
+        if (!outcome.status) outcome.status = 'local-changed-during-push';
+        outcome.message = 'Lokale Daten haben sich während des Pushs geändert. Bitte erneut synchronisieren oder pushen.';
+        outcome.errorCode = 'local-changed-during-push';
+        return createGistSyncOutcome(outcome);
       }
 
       function applySuccessfulGistWrite(stagedState, syncTs) {
@@ -12666,6 +12690,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'gist-patch-not-found-or-inaccessible': 'Gist-Schreiben fehlgeschlagen: Der Gist ist nicht zugänglich.',
           'gist-patch-network-error': 'Gist-Schreiben fehlgeschlagen: Netzwerkfehler.',
           'gist-write-precondition-unavailable': 'Gist-Schreiben wurde sicher abgebrochen: GitHub hat keine Versionskennung geliefert.',
+          'local-changed-during-push': 'Lokale Daten haben sich während des Pushs geändert. Bitte erneut synchronisieren oder pushen.',
           'gist-patch-failed': 'Gist-Schreiben fehlgeschlagen.'
         };
         return messages[errorCode] || 'Gist-Sync fehlgeschlagen.';
@@ -12701,6 +12726,48 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
 
         const initialSnapshot = await preflightGistRemote({ gistId: C.gistId, token: C.gistToken, passphrase });
+        const localStateSnapshot = JSON.parse(JSON.stringify(S || {}));
+        if (!initialSnapshot.ok && initialSnapshot.errorCode === 'gist-file-missing') {
+          if (!hasRoadtripUserData(localStateSnapshot)) {
+            _gistStatus.lastError = initialSnapshot.errorCode;
+            updateGistStatusUI();
+            alert('Die erwartete Gist-Datei fehlt und der lokale Stand enthält keine initialisierbaren Daten. Es wurde nichts geschrieben.');
+            return createGistSyncOutcome({ status: 'preflight-error', remoteKind: initialSnapshot.remoteKind, warnings: initialSnapshot.warnings, errorCode: initialSnapshot.errorCode });
+          }
+          const initializeMissingFile = confirm('Die erwartete Gist-Datei roadtrip_data.json fehlt. Sicherer Erst-Push: Atlas legt nur diese Datei mit dem aktuellen lokalen Stand an, wenn ein zweiter Preflight weiterhin bestätigt, dass sie fehlt. Fortfahren?');
+          if (!initializeMissingFile) return createGistSyncOutcome({ status: 'preview-cancelled', remoteKind: initialSnapshot.remoteKind, errorCode: initialSnapshot.errorCode });
+          const syncTs = new Date().toISOString();
+          const stagedState = JSON.parse(JSON.stringify(localStateSnapshot));
+          stagedState._lastExported = syncTs;
+          stagedState._lastGistPushAt = syncTs;
+          const payload = { version: 1, exported: syncTs, state: stagedState };
+          const envelope = await encryptRoadtripGistPayload(payload, passphrase);
+          const outcome = await safePatchGistRemote({
+            gistId: C.gistId,
+            token: C.gistToken,
+            expectedSnapshot: initialSnapshot,
+            content: JSON.stringify(envelope, null, 2),
+            beforePatch() {
+              if (!hasLocalStateChangedSinceSnapshot(localStateSnapshot)) return null;
+              return localChangedDuringPushOutcome({ remoteKind: initialSnapshot.remoteKind, warnings: ['local-changed-before-patch'] });
+            }
+          });
+          if (!outcome.wroteRemote) {
+            _gistStatus.lastError = outcome.errorCode;
+            updateGistStatusUI();
+            alert(gistSyncFailureMessage(outcome.errorCode) + ' Es wurde keine Gist-Datei initialisiert.');
+            return outcome;
+          }
+          if (hasLocalStateChangedSinceSnapshot(localStateSnapshot)) {
+            _gistStatus.lastError = 'local-changed-during-push';
+            updateGistStatusUI();
+            alert('Remote-Gist-Datei wurde mit dem vorherigen Snapshot initialisiert. Lokale Änderungen bleiben lokal und müssen erneut gepusht werden.');
+            return localChangedDuringPushOutcome(Object.assign({}, outcome, { status: 'local-changed-after-push', warnings: ['local-changed-after-patch'].concat(outcome.warnings || []) }));
+          }
+          applySuccessfulGistWrite(stagedState, syncTs);
+          alert('Gist-Datei roadtrip_data.json wurde nach zweitem Preflight verschlüsselt initialisiert: ' + formatDateTime(syncTs));
+          return createGistSyncOutcome(Object.assign({}, outcome, { status: 'initialized-remote' }));
+        }
         if (!initialSnapshot.ok && !isEmptyGistPreflightSnapshot(initialSnapshot)) {
           _gistStatus.lastError = initialSnapshot.errorCode;
           updateGistStatusUI();
@@ -12727,7 +12794,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         }
 
         const syncTs = new Date().toISOString();
-        const stagedState = JSON.parse(JSON.stringify(S || {}));
+        const stagedState = JSON.parse(JSON.stringify(localStateSnapshot));
         stagedState._lastExported = syncTs;
         stagedState._lastGistPushAt = syncTs;
         const payload = { version: 1, exported: syncTs, state: stagedState };
@@ -12736,13 +12803,23 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           gistId: C.gistId,
           token: C.gistToken,
           expectedSnapshot: initialSnapshot,
-          content: JSON.stringify(envelope, null, 2)
+          content: JSON.stringify(envelope, null, 2),
+          beforePatch() {
+            if (!hasLocalStateChangedSinceSnapshot(localStateSnapshot)) return null;
+            return localChangedDuringPushOutcome({ remoteKind: initialSnapshot.remoteKind, warnings: ['local-changed-before-patch'] });
+          }
         });
         if (!outcome.wroteRemote) {
           _gistStatus.lastError = outcome.errorCode;
           updateGistStatusUI();
           alert(gistSyncFailureMessage(outcome.errorCode) + ' Bitte ZIP-Backup oder JSON-Export als Recovery nutzen.');
           return outcome;
+        }
+        if (hasLocalStateChangedSinceSnapshot(localStateSnapshot)) {
+          _gistStatus.lastError = 'local-changed-during-push';
+          updateGistStatusUI();
+          alert('Remote-Gist wurde mit dem vorherigen Snapshot geschrieben. Lokale Änderungen bleiben lokal und müssen erneut gepusht werden.');
+          return localChangedDuringPushOutcome(Object.assign({}, outcome, { status: 'local-changed-after-push', warnings: ['local-changed-after-patch'].concat(outcome.warnings || []) }));
         }
         applySuccessfulGistWrite(stagedState, syncTs);
         alert('Remote-Gist wurde verschlüsselt mit lokalem Stand überschrieben: ' + formatDateTime(syncTs));
