@@ -12665,9 +12665,27 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function localChangedDuringPushOutcome(overrides) {
         const outcome = Object.assign({}, overrides || {});
         if (!outcome.status) outcome.status = 'local-changed-during-push';
+        outcome.ok = false;
+        outcome.shouldMutateState = false;
         outcome.message = 'Lokale Daten haben sich während des Pushs geändert. Bitte erneut synchronisieren oder pushen.';
         outcome.errorCode = 'local-changed-during-push';
-        return createGistSyncOutcome(outcome);
+        const raceOutcome = createGistSyncOutcome(outcome);
+        raceOutcome.ok = false;
+        raceOutcome.shouldMutateState = false;
+        return raceOutcome;
+      }
+
+      function localChangedDuringSyncOutcome(overrides) {
+        const outcome = Object.assign({}, overrides || {});
+        if (!outcome.status) outcome.status = 'local-changed-during-sync';
+        outcome.ok = false;
+        outcome.shouldMutateState = false;
+        outcome.message = 'Lokale Daten haben sich während des Syncs geändert. Bitte erneut synchronisieren oder pushen.';
+        outcome.errorCode = 'local-changed-during-sync';
+        const raceOutcome = createGistSyncOutcome(outcome);
+        raceOutcome.ok = false;
+        raceOutcome.shouldMutateState = false;
+        return raceOutcome;
       }
 
       function applySuccessfulGistWrite(stagedState, syncTs) {
@@ -12691,6 +12709,7 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           'gist-patch-network-error': 'Gist-Schreiben fehlgeschlagen: Netzwerkfehler.',
           'gist-write-precondition-unavailable': 'Gist-Schreiben wurde sicher abgebrochen: GitHub hat keine Versionskennung geliefert.',
           'local-changed-during-push': 'Lokale Daten haben sich während des Pushs geändert. Bitte erneut synchronisieren oder pushen.',
+          'local-changed-during-sync': 'Lokale Daten haben sich während des Syncs geändert. Bitte erneut synchronisieren oder pushen.',
           'gist-patch-failed': 'Gist-Schreiben fehlgeschlagen.'
         };
         return messages[errorCode] || 'Gist-Sync fehlgeschlagen.';
@@ -12859,12 +12878,27 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           stagedState._lastExported = syncTs;
           stagedState._lastGistPushAt = syncTs;
           const envelope = await encryptRoadtripGistPayload({ version: 1, exported: syncTs, state: stagedState }, passphrase);
-          const writeOutcome = await safePatchGistRemote({ gistId: C.gistId, token: C.gistToken, expectedSnapshot: initialSnapshot, content: JSON.stringify(envelope, null, 2) });
+          const writeOutcome = await safePatchGistRemote({
+            gistId: C.gistId,
+            token: C.gistToken,
+            expectedSnapshot: initialSnapshot,
+            content: JSON.stringify(envelope, null, 2),
+            beforePatch() {
+              if (!hasLocalStateChangedSinceSnapshot(localStateSnapshot)) return null;
+              return localChangedDuringSyncOutcome({ remoteKind: initialSnapshot.remoteKind, warnings: ['local-changed-before-patch'] });
+            }
+          });
           if (!writeOutcome.wroteRemote) {
             _gistStatus.lastError = writeOutcome.errorCode;
             updateGistStatusUI();
             alert(gistSyncFailureMessage(writeOutcome.errorCode));
             return writeOutcome;
+          }
+          if (hasLocalStateChangedSinceSnapshot(localStateSnapshot)) {
+            _gistStatus.lastError = 'local-changed-during-sync';
+            updateGistStatusUI();
+            alert('Remote-Gist wurde mit dem vorherigen Snapshot geschrieben. Lokale Änderungen bleiben lokal und müssen erneut synchronisiert oder gepusht werden.');
+            return localChangedDuringSyncOutcome(Object.assign({}, writeOutcome, { status: 'local-changed-after-sync', warnings: ['local-changed-after-patch'].concat(writeOutcome.warnings || []) }));
           }
           applySuccessfulGistWrite(stagedState, syncTs);
           alert('Leerer Remote-Gist wurde nach Bestätigung verschlüsselt initialisiert.');
@@ -12963,12 +12997,27 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
         stagedState._lastExported = syncTs;
         stagedState._lastGistPushAt = syncTs;
         const envelope = await encryptRoadtripGistPayload({ version: 1, exported: syncTs, state: stagedState }, passphrase);
-        const writeOutcome = await safePatchGistRemote({ gistId: C.gistId, token: C.gistToken, expectedSnapshot: initialSnapshot, content: JSON.stringify(envelope, null, 2) });
+        const writeOutcome = await safePatchGistRemote({
+          gistId: C.gistId,
+          token: C.gistToken,
+          expectedSnapshot: initialSnapshot,
+          content: JSON.stringify(envelope, null, 2),
+          beforePatch() {
+            if (!hasLocalStateChangedSinceSnapshot(localStateSnapshot)) return null;
+            return localChangedDuringSyncOutcome({ remoteKind: initialSnapshot.remoteKind, warnings: ['local-changed-before-patch'] });
+          }
+        });
         if (!writeOutcome.wroteRemote) {
           _gistStatus.lastError = writeOutcome.errorCode;
           updateGistStatusUI();
           alert(gistSyncFailureMessage(writeOutcome.errorCode));
           return writeOutcome;
+        }
+        if (hasLocalStateChangedSinceSnapshot(localStateSnapshot)) {
+          _gistStatus.lastError = 'local-changed-during-sync';
+          updateGistStatusUI();
+          alert('Remote-Gist wurde mit dem vorherigen Snapshot geschrieben. Lokale Änderungen bleiben lokal und müssen erneut synchronisiert oder gepusht werden.');
+          return localChangedDuringSyncOutcome(Object.assign({}, writeOutcome, { status: 'local-changed-after-sync', warnings: ['local-changed-after-patch'].concat(writeOutcome.warnings || []) }));
         }
         applySuccessfulGistWrite(stagedState, syncTs);
         _gistStatus.lastPull = syncTs;
