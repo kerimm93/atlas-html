@@ -12665,17 +12665,27 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       function localChangedDuringPushOutcome(overrides) {
         const outcome = Object.assign({}, overrides || {});
         if (!outcome.status) outcome.status = 'local-changed-during-push';
+        outcome.ok = false;
+        outcome.shouldMutateState = false;
         outcome.message = 'Lokale Daten haben sich während des Pushs geändert. Bitte erneut synchronisieren oder pushen.';
         outcome.errorCode = 'local-changed-during-push';
-        return createGistSyncOutcome(outcome);
+        const raceOutcome = createGistSyncOutcome(outcome);
+        raceOutcome.ok = false;
+        raceOutcome.shouldMutateState = false;
+        return raceOutcome;
       }
 
       function localChangedDuringSyncOutcome(overrides) {
         const outcome = Object.assign({}, overrides || {});
         if (!outcome.status) outcome.status = 'local-changed-during-sync';
+        outcome.ok = false;
+        outcome.shouldMutateState = false;
         outcome.message = 'Lokale Daten haben sich während des Syncs geändert. Bitte erneut synchronisieren oder pushen.';
         outcome.errorCode = 'local-changed-during-sync';
-        return createGistSyncOutcome(outcome);
+        const raceOutcome = createGistSyncOutcome(outcome);
+        raceOutcome.ok = false;
+        raceOutcome.shouldMutateState = false;
+        return raceOutcome;
       }
 
       function applySuccessfulGistWrite(stagedState, syncTs) {

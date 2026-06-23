@@ -439,6 +439,8 @@ async function preflightFromResponse(fetchResponse) {
   prePatchLocalChangeQueue.assertDone();
   assert.equal(prePatchLocalChangeOutcome.status, 'local-changed-during-push');
   assert.equal(prePatchLocalChangeOutcome.errorCode, 'local-changed-during-push');
+  assert.equal(prePatchLocalChangeOutcome.ok, false);
+  assert.equal(prePatchLocalChangeOutcome.shouldMutateState, false);
   assert.equal(prePatchLocalChangeOutcome.wroteRemote, false);
   assert.deepEqual(prePatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET']);
   assert.equal(api.getState().projects[0].id, 'prepatch-new-local');
@@ -458,6 +460,8 @@ async function preflightFromResponse(fetchResponse) {
   postPatchLocalChangeQueue.assertDone();
   assert.equal(postPatchLocalChangeOutcome.status, 'local-changed-after-push');
   assert.equal(postPatchLocalChangeOutcome.errorCode, 'local-changed-during-push');
+  assert.equal(postPatchLocalChangeOutcome.ok, false);
+  assert.equal(postPatchLocalChangeOutcome.shouldMutateState, false);
   assert.equal(postPatchLocalChangeOutcome.wroteRemote, true);
   assert.deepEqual(postPatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET', 'PATCH']);
   assert.equal(api.getState().projects[0].id, 'postpatch-new-local');
@@ -479,6 +483,8 @@ async function preflightFromResponse(fetchResponse) {
   syncPrePatchLocalChangeQueue.assertDone();
   assert.equal(syncPrePatchLocalChangeOutcome.status, 'local-changed-during-sync');
   assert.equal(syncPrePatchLocalChangeOutcome.errorCode, 'local-changed-during-sync');
+  assert.equal(syncPrePatchLocalChangeOutcome.ok, false);
+  assert.equal(syncPrePatchLocalChangeOutcome.shouldMutateState, false);
   assert.equal(syncPrePatchLocalChangeOutcome.wroteRemote, false);
   assert.deepEqual(syncPrePatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET']);
   assert.equal(api.getState().projects[0].id, 'sync-prepatch-new-local');
@@ -498,6 +504,8 @@ async function preflightFromResponse(fetchResponse) {
   syncPostPatchLocalChangeQueue.assertDone();
   assert.equal(syncPostPatchLocalChangeOutcome.status, 'local-changed-after-sync');
   assert.equal(syncPostPatchLocalChangeOutcome.errorCode, 'local-changed-during-sync');
+  assert.equal(syncPostPatchLocalChangeOutcome.ok, false);
+  assert.equal(syncPostPatchLocalChangeOutcome.shouldMutateState, false);
   assert.equal(syncPostPatchLocalChangeOutcome.wroteRemote, true);
   assert.deepEqual(syncPostPatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET', 'PATCH']);
   assert.equal(api.getState().projects[0].id, 'sync-postpatch-new-local');
@@ -519,6 +527,8 @@ async function preflightFromResponse(fetchResponse) {
   syncEmptyPrePatchLocalChangeQueue.assertDone();
   assert.equal(syncEmptyPrePatchLocalChangeOutcome.status, 'local-changed-during-sync');
   assert.equal(syncEmptyPrePatchLocalChangeOutcome.errorCode, 'local-changed-during-sync');
+  assert.equal(syncEmptyPrePatchLocalChangeOutcome.ok, false);
+  assert.equal(syncEmptyPrePatchLocalChangeOutcome.shouldMutateState, false);
   assert.equal(syncEmptyPrePatchLocalChangeOutcome.wroteRemote, false);
   assert.deepEqual(syncEmptyPrePatchLocalChangeQueue.calls.map(call => call.options.method), ['GET', 'GET']);
   assert.equal(api.getState().projects[0].id, 'sync-empty-prepatch-new-local');
