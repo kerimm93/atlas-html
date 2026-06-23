@@ -98,6 +98,7 @@ assert.equal(state.projects.length, 2, 'zwei eindeutige neue Projekte werden ang
 assert.equal(state.projects[0].resources[0].url, 'https://www.notion.so/alpha', 'Notion-URL bleibt am Projekt erhalten');
 api.setState(JSON.parse(JSON.stringify(state)));
 assert.equal(api.getState().projects[0].resources[0].url, 'https://www.notion.so/alpha', 'Ressource bleibt nach Reload/ensureDefaults erhalten');
+const exportedWithResources = JSON.parse(JSON.stringify(api.getState()));
 
 preview = api.analyzeProjectBulkImport(payload([{ title: '   ' }]));
 assert.equal(preview.counts.invalid, 1);
@@ -119,6 +120,32 @@ const secretPreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL
 assert.equal(secretPreview.entries[0].resources.length, 0, 'Secret-haltige Ressourcen-URL wird nicht gespeichert');
 assert.match(secretPreview.entries[0].warnings.join('\n'), /Secret/);
 
+function assertSinglePayloadDuplicateImport(projects, expectedReasonPattern) {
+  api.setState(api.defaultState());
+  const duplicatePreview = api.analyzeProjectBulkImport(payload(projects));
+  assert.equal(duplicatePreview.counts.new, 1);
+  assert.equal(duplicatePreview.counts.duplicates, 1);
+  assert.match(duplicatePreview.entries[1].reason, expectedReasonPattern);
+  api.setBulkState({ rawJson: payload([]), preview: duplicatePreview, summary: '', error: '' });
+  api.confirmProjectBulkImport();
+  assert.equal(api.getState().projects.length, 1, 'Payload-interne Dublette wird beim Confirm übersprungen');
+}
+
+assertSinglePayloadDuplicateImport([
+  { title: 'Payload External A', externalId: 'same-external-id' },
+  { title: 'Payload External B', externalId: 'same-external-id' }
+], /Doppelt im Import-Payload: gleiche externalId/);
+
+assertSinglePayloadDuplicateImport([
+  { title: 'Payload Notion A', notionUrl: 'https://www.notion.so/payload-same' },
+  { title: 'Payload Notion B', notionUrl: 'https://www.notion.so/payload-same' }
+], /Doppelt im Import-Payload: gleiche Ressourcen-\/Notion-URL/);
+
+assertSinglePayloadDuplicateImport([
+  { title: 'Payload Titel' },
+  { title: 'Payload Titel' }
+], /Doppelt im Import-Payload: sehr ähnlicher Titel/);
+
 const handoff = api.parseAtlasProjectHandoffJson(JSON.stringify({
   type: 'atlas-project-handoff-v1',
   project: { title: 'Einzelprojekt', summary: 'Summary' },
@@ -129,7 +156,6 @@ const handoff = api.parseAtlasProjectHandoffJson(JSON.stringify({
 }));
 assert.equal(handoff.project.title, 'Einzelprojekt', 'bestehender Einzelprojekt-Handoff bleibt parsbar');
 
-const exported = JSON.parse(JSON.stringify(api.getState()));
-assert.equal(exported.projects[0].resources[0].url, 'https://www.notion.so/alpha', 'JSON-Export/Backup-State nimmt Ressourcenfeld mit');
+assert.equal(exportedWithResources.projects[0].resources[0].url, 'https://www.notion.so/alpha', 'JSON-Export/Backup-State nimmt Ressourcenfeld mit');
 
 console.log('Projekt-Bulk-Import VM-Tests erfolgreich.');

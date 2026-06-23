@@ -6699,29 +6699,58 @@ ${workMeta.nextThought || '—'}`,
         return urls.filter(Boolean);
       }
 
+      function getProjectBulkImportMatchReasons(project, candidate) {
+        const reasons = [];
+        if (!project || !candidate) return reasons;
+        if (project.externalId && String(candidate.externalId || '').trim() === project.externalId) reasons.push('gleiche externalId');
+        const candidateUrls = getProjectResourceUrls(candidate);
+        const incomingUrls = getProjectResourceUrls(project);
+        if (incomingUrls.some(url => candidateUrls.includes(url))) reasons.push('gleiche Ressourcen-/Notion-URL');
+        const normalizedTitle = normalizeText(project.title);
+        const candidateTitle = normalizeText(candidate.title);
+        if (normalizedTitle && candidateTitle && (candidateTitle === normalizedTitle || candidateTitle.includes(normalizedTitle) || normalizedTitle.includes(candidateTitle))) reasons.push('sehr ähnlicher Titel');
+        return reasons;
+      }
+
       function findProjectBulkImportMatches(project) {
         const matches = [];
-        const normalizedTitle = normalizeText(project.title);
         S.projects.forEach(existing => {
-          const reasons = [];
-          if (project.externalId && String(existing.externalId || '').trim() === project.externalId) reasons.push('gleiche externalId');
-          const existingUrls = getProjectResourceUrls(existing);
-          const incomingUrls = getProjectResourceUrls(project);
-          if (incomingUrls.some(url => existingUrls.includes(url))) reasons.push('gleiche Ressourcen-/Notion-URL');
-          const existingTitle = normalizeText(existing.title);
-          if (normalizedTitle && existingTitle && (existingTitle === normalizedTitle || existingTitle.includes(normalizedTitle) || normalizedTitle.includes(existingTitle))) reasons.push('sehr ähnlicher Titel');
+          const reasons = getProjectBulkImportMatchReasons(project, existing);
           if (reasons.length) matches.push({ project: existing, reasons });
         });
         return matches;
       }
 
+      function findProjectBulkImportPayloadMatches(project, previousEntries) {
+        const matches = [];
+        (Array.isArray(previousEntries) ? previousEntries : [])
+          .filter(entry => entry && entry.valid)
+          .forEach(entry => {
+            const reasons = getProjectBulkImportMatchReasons(project, entry);
+            if (reasons.length) matches.push({ entry, reasons });
+          });
+        return matches;
+      }
+
       function analyzeProjectBulkImport(raw) {
         const normalized = normalizeProjectBulkImportPayload(raw);
-        const entries = normalized.projects.map(project => {
-          if (!project.valid) return Object.assign({}, project, { status: 'invalid', statusLabel: 'ungültig', matches: [], reason: project.reason || 'Ungültiger Eintrag.' });
+        const entries = [];
+        normalized.projects.forEach(project => {
+          if (!project.valid) {
+            entries.push(Object.assign({}, project, { status: 'invalid', statusLabel: 'ungültig', matches: [], payloadMatches: [], reason: project.reason || 'Ungültiger Eintrag.' }));
+            return;
+          }
           const matches = findProjectBulkImportMatches(project);
-          if (matches.length) return Object.assign({}, project, { status: 'duplicate', statusLabel: matches.some(m => m.reasons.some(r => /externalId|URL/.test(r))) ? 'möglicher Update-Kandidat' : 'Dublette', matches, reason: matches.map(m => m.reasons.join(', ')).join('; ') });
-          return Object.assign({}, project, { status: 'new', statusLabel: 'neu', matches: [], reason: 'Eindeutig neues Projekt.' });
+          if (matches.length) {
+            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: matches.some(m => m.reasons.some(r => /externalId|URL/.test(r))) ? 'möglicher Update-Kandidat' : 'Dublette', matches, payloadMatches: [], reason: matches.map(m => m.reasons.join(', ')).join('; ') }));
+            return;
+          }
+          const payloadMatches = findProjectBulkImportPayloadMatches(project, entries);
+          if (payloadMatches.length) {
+            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: 'Dublette', matches: [], payloadMatches, reason: payloadMatches.map(m => `Doppelt im Import-Payload: ${m.reasons.join(', ')}`).join('; ') }));
+            return;
+          }
+          entries.push(Object.assign({}, project, { status: 'new', statusLabel: 'neu', matches: [], payloadMatches: [], reason: 'Eindeutig neues Projekt.' }));
         });
         return {
           payload: normalized,
