@@ -2069,6 +2069,7 @@
         showAllProjects: false,
         projectEditMode: false,
         projectHandoffImport: { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' },
+        projectBulkImport: { rawJson: '', preview: null, summary: '', error: '' },
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.direct },
@@ -2414,6 +2415,7 @@
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
         if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
+        if (!ui.projectBulkImport || typeof ui.projectBulkImport !== 'object') ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '' };
         if (!ui.learningTracker || typeof ui.learningTracker !== 'object') ui.learningTracker = { projectId: 'all', scope: 'active', filter: 'all', search: '' };
         if (!ui.learningTracker.projectId) ui.learningTracker.projectId = 'all';
         if (!['active', 'completed', 'reference', 'all'].includes(ui.learningTracker.scope)) {
@@ -2962,6 +2964,31 @@
         if ($('btnImportProjectHandoff')) $('btnImportProjectHandoff').addEventListener('click', importAtlasProjectHandoff);
         if ($('btnResetProjectHandoffImport')) $('btnResetProjectHandoffImport').addEventListener('click', () => {
           ui.projectHandoffImport = { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' };
+          renderView();
+        });
+        if ($('projectBulkImportRawJson')) $('projectBulkImportRawJson').addEventListener('input', e => {
+          const state = getProjectBulkImportState();
+          state.rawJson = e.target.value;
+          state.preview = null;
+          state.summary = '';
+          state.error = '';
+        });
+        if ($('btnPreviewProjectBulkImport')) $('btnPreviewProjectBulkImport').addEventListener('click', () => {
+          const state = getProjectBulkImportState();
+          try {
+            state.preview = analyzeProjectBulkImport(state.rawJson);
+            state.error = '';
+            state.summary = 'Preview erstellt. Import schreibt nur eindeutig neue Projekte.';
+          } catch (error) {
+            state.preview = null;
+            state.summary = '';
+            state.error = error.message || 'Das Projektlisten-JSON konnte nicht geprüft werden.';
+          }
+          renderView();
+        });
+        if ($('btnConfirmProjectBulkImport')) $('btnConfirmProjectBulkImport').addEventListener('click', confirmProjectBulkImport);
+        if ($('btnResetProjectBulkImport')) $('btnResetProjectBulkImport').addEventListener('click', () => {
+          ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '' };
           renderView();
         });
         if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
@@ -6571,6 +6598,260 @@ ${workMeta.nextThought || '—'}`,
         }).map(project => project.title);
       }
 
+
+      const ATLAS_PROJECT_BULK_IMPORT_TYPE = 'atlas-project-bulk-import-v1';
+      const PROJECT_RESOURCE_TYPES = ['notion', 'gpt-chat', 'claude-chat', 'obsidian', 'markdown', 'other'];
+
+      function getProjectBulkImportState() {
+        if (!ui.projectBulkImport || typeof ui.projectBulkImport !== 'object') ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '' };
+        return ui.projectBulkImport;
+      }
+
+      function stringArrayOrEmpty(value) {
+        return Array.isArray(value) ? Array.from(new Set(value.map(item => String(item == null ? '' : item).trim()).filter(Boolean))) : [];
+      }
+
+      function urlLooksLikeSecret(url) {
+        const text = String(url || '');
+        return /([?&](token|access_token|api[_-]?key|key|secret|password|passphrase|auth|signature|sig)=)|(?:bearer\s+[a-z0-9._~+\/-]+)/i.test(text);
+      }
+
+      function isAllowedProjectResourceUrl(url) {
+        const text = String(url || '').trim();
+        if (!text || urlLooksLikeSecret(text)) return false;
+        const schemeMatch = text.match(/^([a-z][a-z0-9+.-]*):/i);
+        if (!schemeMatch) return false;
+        const scheme = schemeMatch[1].toLowerCase() + ':';
+        if (scheme === 'http:' || scheme === 'https:') return /^https?:\/\/\S+/i.test(text);
+        if (scheme === 'obsidian:') return /^obsidian:\S+/i.test(text);
+        return false;
+      }
+
+      function getProjectResourceUrlRejectionReason(url) {
+        const text = String(url || '').trim();
+        if (!text) return 'empty';
+        if (urlLooksLikeSecret(text)) return 'secret';
+        if (!isAllowedProjectResourceUrl(text)) return 'unsafe';
+        return '';
+      }
+
+      function normalizeProjectResourceForStorage(resource, defaults = {}) {
+        if (!resource || typeof resource !== 'object' || Array.isArray(resource)) return null;
+        const now = new Date().toISOString();
+        const type = String(resource.type || defaults.type || 'other').trim();
+        const url = String(resource.url || resource.href || '').trim();
+        if (!isAllowedProjectResourceUrl(url)) return null;
+        return {
+          id: String(resource.id || '').trim() || uid('res'),
+          type: PROJECT_RESOURCE_TYPES.includes(type) ? type : 'other',
+          title: String(resource.title || defaults.title || url).trim().slice(0, 180) || 'Ressource',
+          url,
+          externalId: String(resource.externalId || defaults.externalId || '').trim(),
+          source: String(resource.source || defaults.source || 'bulk-import').trim(),
+          createdAt: String(resource.createdAt || '').trim() || now,
+          updatedAt: String(resource.updatedAt || '').trim() || now
+        };
+      }
+
+      function parseProjectBulkImportJson(raw) {
+        const text = String(raw || '').trim();
+        if (!text) throw new Error('Bitte zuerst ein JSON für den Multi-Projekt-Import einfügen.');
+        try { return JSON.parse(text); }
+        catch (error) { throw new Error('Ungültiges JSON: ' + error.message); }
+      }
+
+      function normalizeProjectBulkImportPayload(rawPayload) {
+        const payload = typeof rawPayload === 'string' ? parseProjectBulkImportJson(rawPayload) : rawPayload;
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Der Multi-Projekt-Import muss ein JSON-Objekt sein.');
+        if (payload.type !== ATLAS_PROJECT_BULK_IMPORT_TYPE) throw new Error(`Ungültiger Import-Typ. Erwartet wird exakt „${ATLAS_PROJECT_BULK_IMPORT_TYPE}“.`);
+        if (!Array.isArray(payload.projects)) throw new Error('projects muss ein Array sein.');
+        const meta = payload.meta && typeof payload.meta === 'object' && !Array.isArray(payload.meta) ? payload.meta : {};
+        const source = String(meta.source || 'bulk-import').trim() || 'bulk-import';
+        const projects = payload.projects.map((entry, index) => {
+          const warnings = [];
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            return { index, valid: false, title: '', reason: 'Eintrag ist kein Objekt.', warnings, tags: [], areas: [], resources: [], notes: [], proposedFeatures: [] };
+          }
+          const title = String(entry.title || '').trim();
+          const externalId = String(entry.externalId || '').trim();
+          const notionUrl = String(entry.notionUrl || '').trim();
+          const rawResources = Array.isArray(entry.resources) ? entry.resources : [];
+          if (entry.resources && !Array.isArray(entry.resources)) warnings.push('resources ist kein Array und wurde ignoriert.');
+          const resources = rawResources.map(resource => {
+            const normalized = normalizeProjectResourceForStorage(resource, { externalId, source });
+            const resourceUrl = resource && typeof resource === 'object' ? String(resource.url || resource.href || '').trim() : '';
+            if (!normalized && resourceUrl) {
+              const rejectionReason = getProjectResourceUrlRejectionReason(resourceUrl);
+              if (rejectionReason === 'secret') warnings.push(`Ressource wegen möglichem Secret nicht gespeichert: ${String(resource.title || resourceUrl || '').slice(0, 80)}`);
+              else if (rejectionReason === 'unsafe') warnings.push(`Ressource wegen unsicherem URL-Schema nicht gespeichert: ${String(resource.title || resourceUrl || '').slice(0, 80)}`);
+            }
+            return normalized;
+          }).filter(Boolean);
+          if (notionUrl) {
+            const notionUrlRejectionReason = getProjectResourceUrlRejectionReason(notionUrl);
+            if (notionUrlRejectionReason === 'secret') warnings.push('notionUrl enthält vermutlich ein Secret und wurde nicht gespeichert.');
+            else if (notionUrlRejectionReason === 'unsafe') warnings.push('notionUrl wurde wegen unsicherem URL-Schema nicht gespeichert.');
+            else if (!resources.some(resource => resource.url === notionUrl)) resources.push(normalizeProjectResourceForStorage({ type: 'notion', title: 'Notion-Projektseite', url: notionUrl, externalId, source }, { source }));
+          }
+          const notes = Array.isArray(entry.notes) ? entry.notes.filter(n => n && typeof n === 'object' && String(n.text || '').trim()).map(n => ({ text: String(n.text || '').trim(), type: NOTE_TYPES.includes(String(n.type || '').trim()) ? String(n.type || '').trim() : 'note' })) : [];
+          const proposedFeatures = Array.isArray(entry.proposedFeatures) ? entry.proposedFeatures.filter(f => f && typeof f === 'object' && String(f.title || '').trim()).map(f => ({ title: String(f.title || '').trim(), description: String(f.description || '').trim(), category: normalizeAtlasFeatureCategory(f.category), priority: normalizeAtlasFeaturePriority(f.priority), status: 'planned', pool: 'planned' })) : [];
+          return {
+            index,
+            valid: !!title,
+            reason: title ? '' : 'Leerer Titel.',
+            title,
+            summary: String(entry.summary || '').trim(),
+            projectStatus: normalizeAtlasProjectStatus(entry.status),
+            currentFocus: String(entry.currentFocus || '').trim(),
+            nextStep: String(entry.nextStep || '').trim(),
+            tags: stringArrayOrEmpty(entry.tags),
+            areas: stringArrayOrEmpty(entry.areas),
+            sourceContext: String(entry.sourceContext || '').trim(),
+            externalId,
+            notionUrl: isAllowedProjectResourceUrl(notionUrl) ? notionUrl : '',
+            resources,
+            notes,
+            proposedFeatures,
+            warnings
+          };
+        });
+        return { type: ATLAS_PROJECT_BULK_IMPORT_TYPE, meta: { source, exportedAt: String(meta.exportedAt || '').trim(), sourceTool: String(meta.sourceTool || '').trim() }, projects };
+      }
+
+      function getProjectResourceUrls(project) {
+        const urls = [];
+        ['mainChatUrl', 'driveUrl', 'obsidianUrl', 'notionUrl'].forEach(key => { if (project && project[key]) urls.push(String(project[key]).trim()); });
+        (Array.isArray(project && project.resources) ? project.resources : []).forEach(resource => { if (resource && resource.url) urls.push(String(resource.url).trim()); });
+        return urls.filter(Boolean);
+      }
+
+      function getProjectBulkImportMatchReasons(project, candidate) {
+        const reasons = [];
+        if (!project || !candidate) return reasons;
+        if (project.externalId && String(candidate.externalId || '').trim() === project.externalId) reasons.push('gleiche externalId');
+        const candidateUrls = getProjectResourceUrls(candidate);
+        const incomingUrls = getProjectResourceUrls(project);
+        if (incomingUrls.some(url => candidateUrls.includes(url))) reasons.push('gleiche Ressourcen-/Notion-URL');
+        const normalizedTitle = normalizeText(project.title);
+        const candidateTitle = normalizeText(candidate.title);
+        if (normalizedTitle && candidateTitle && (candidateTitle === normalizedTitle || candidateTitle.includes(normalizedTitle) || normalizedTitle.includes(candidateTitle))) reasons.push('sehr ähnlicher Titel');
+        return reasons;
+      }
+
+      function findProjectBulkImportMatches(project) {
+        const matches = [];
+        S.projects.forEach(existing => {
+          const reasons = getProjectBulkImportMatchReasons(project, existing);
+          if (reasons.length) matches.push({ project: existing, reasons });
+        });
+        return matches;
+      }
+
+      function findProjectBulkImportPayloadMatches(project, previousEntries) {
+        const matches = [];
+        (Array.isArray(previousEntries) ? previousEntries : [])
+          .filter(entry => entry && entry.valid)
+          .forEach(entry => {
+            const reasons = getProjectBulkImportMatchReasons(project, entry);
+            if (reasons.length) matches.push({ entry, reasons });
+          });
+        return matches;
+      }
+
+      function analyzeProjectBulkImport(raw) {
+        const normalized = normalizeProjectBulkImportPayload(raw);
+        const entries = [];
+        normalized.projects.forEach(project => {
+          if (!project.valid) {
+            entries.push(Object.assign({}, project, { status: 'invalid', statusLabel: 'ungültig', matches: [], payloadMatches: [], reason: project.reason || 'Ungültiger Eintrag.' }));
+            return;
+          }
+          const matches = findProjectBulkImportMatches(project);
+          if (matches.length) {
+            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: matches.some(m => m.reasons.some(r => /externalId|URL/.test(r))) ? 'möglicher Update-Kandidat' : 'Dublette', matches, payloadMatches: [], reason: matches.map(m => m.reasons.join(', ')).join('; ') }));
+            return;
+          }
+          const payloadMatches = findProjectBulkImportPayloadMatches(project, entries);
+          if (payloadMatches.length) {
+            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: 'Dublette', matches: [], payloadMatches, reason: payloadMatches.map(m => `Doppelt im Import-Payload: ${m.reasons.join(', ')}`).join('; ') }));
+            return;
+          }
+          entries.push(Object.assign({}, project, { status: 'new', statusLabel: 'neu', matches: [], payloadMatches: [], reason: 'Eindeutig neues Projekt.' }));
+        });
+        return {
+          payload: normalized,
+          entries,
+          counts: {
+            total: entries.length,
+            new: entries.filter(e => e.status === 'new').length,
+            duplicates: entries.filter(e => e.status === 'duplicate').length,
+            invalid: entries.filter(e => e.status === 'invalid').length
+          }
+        };
+      }
+
+      function renderProjectBulkImportPreview(preview) {
+        if (!preview) return '';
+        const c = preview.counts || { total: 0, new: 0, duplicates: 0, invalid: 0 };
+        return `
+          <div class="notice notice-info" style="margin-top:10px;">Erkannt: ${c.total} · Neu: ${c.new} · Dubletten/Updates: ${c.duplicates} · Ungültig: ${c.invalid}</div>
+          <div class="list" style="margin-top:10px;">
+            ${preview.entries.map(entry => `
+              <div class="item">
+                <div class="row-top"><strong>${escapeHtml(entry.title || '(ohne Titel)')}</strong><span class="pill">${escapeHtml(entry.statusLabel)}</span></div>
+                <div class="mini">Grund: ${escapeHtml(entry.reason || '—')}</div>
+                <div class="mini">Ressourcen: ${entry.resources.length}${entry.notionUrl ? ' · Notion-URL erkannt' : ''}${entry.notes.length ? ` · ${entry.notes.length} Notizen nur angezeigt` : ''}${entry.proposedFeatures.length ? ` · ${entry.proposedFeatures.length} Projektbaustein-Kandidaten nur angezeigt` : ''}</div>
+                ${entry.warnings.length ? `<div class="mini" style="color:var(--warning);">${entry.warnings.map(escapeHtml).join('<br>')}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      function renderProjectBulkImportSection() {
+        const state = getProjectBulkImportState();
+        return `
+          <details class="item" style="margin-bottom:12px;" ${state.preview || state.error || state.summary ? 'open' : ''}>
+            <summary style="font-weight:700;cursor:pointer;">Mehrere Projekte importieren (Notion/Claude JSON)</summary>
+            <div class="mini" style="margin:8px 0 10px;">JSON-Vertrag: <code>${ATLAS_PROJECT_BULK_IMPORT_TYPE}</code>. Bitte vor produktiver Nutzung ein frisches JSON-/ZIP-Backup exportieren.</div>
+            <div class="field"><label for="projectBulkImportRawJson">Projektlisten-JSON</label><textarea id="projectBulkImportRawJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"${ATLAS_PROJECT_BULK_IMPORT_TYPE}","projects":[{"title":"...","notionUrl":"https://www.notion.so/..."}]}'>${escapeHtml(state.rawJson || '')}</textarea></div>
+            <div class="stack-row"><button class="btn btn-secondary" id="btnPreviewProjectBulkImport">Preview prüfen</button><button class="btn btn-primary" id="btnConfirmProjectBulkImport" ${state.preview && state.preview.counts && state.preview.counts.new ? '' : 'disabled'}>Nur eindeutige neue Projekte importieren</button><button class="btn" id="btnResetProjectBulkImport">Zurücksetzen</button></div>
+            ${state.error ? `<div class="notice notice-danger" style="margin-top:10px;">${escapeHtml(state.error)}</div>` : ''}
+            ${state.summary ? `<div class="notice" style="margin-top:10px;">${escapeHtml(state.summary)}</div>` : ''}
+            ${renderProjectBulkImportPreview(state.preview)}
+          </details>
+        `;
+      }
+
+      function confirmProjectBulkImport() {
+        const state = getProjectBulkImportState();
+        if (!state.preview) return;
+        const now = new Date().toISOString();
+        const entries = (state.preview.entries || []).filter(entry => entry.status === 'new');
+        entries.forEach(entry => {
+          createProjectFromData({
+            title: entry.title,
+            summary: entry.summary,
+            status: entry.projectStatus,
+            currentFocus: entry.currentFocus,
+            nextStep: entry.nextStep,
+            tags: entry.tags,
+            areas: entry.areas,
+            sourceContext: entry.sourceContext,
+            externalId: entry.externalId,
+            resources: entry.resources.map(resource => Object.assign({}, resource, { id: uid('res'), createdAt: now, updatedAt: now }))
+          });
+        });
+        state.summary = `${entries.length} neue Projekte importiert. Dubletten, Update-Kandidaten und ungültige Einträge wurden übersprungen.`;
+        state.rawJson = '';
+        state.preview = null;
+        state.error = '';
+        save();
+        renderSidebarProjects();
+        renderProjectSelects();
+        renderView();
+      }
+
       function parseAtlasProjectHandoffJson(raw) {
         const text = String(raw || '').trim();
         if (!text) throw new Error('Bitte zuerst ein JSON-Handoff einfügen.');
@@ -6867,7 +7148,8 @@ ${workMeta.nextThought || '—'}`,
         const mainChatUrl = (p.mainChatUrl || '').trim();
         const driveUrl = (p.driveUrl || '').trim();
         const obsidianUrl = (p.obsidianUrl || '').trim();
-        const hasLinks = mainChatUrl || driveUrl || obsidianUrl;
+        const projectResources = Array.isArray(p.resources) ? p.resources : [];
+        const hasLinks = mainChatUrl || driveUrl || obsidianUrl || projectResources.length;
         const chatStructure = getProjectChatStructure(p.id);
         const updatedAt = getProjectUpdatedAt(p);
         const mainChatLabel = projectMainChat ? (projectMainChat.title || 'Hauptchat vorhanden') : (chatStructure.hasMainChat ? 'Hauptchat vorhanden' : 'Kein Hauptchat');
@@ -6927,6 +7209,7 @@ ${workMeta.nextThought || '—'}`,
                 ${mainChatUrl ? `<a href="${escapeAttr(mainChatUrl)}" target="_blank" rel="noopener" class="btn">💬 Hauptchat</a>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Hauptchat hinzufügen</button>`}
                 ${driveUrl ? `<a href="${escapeAttr(driveUrl)}" target="_blank" rel="noopener" class="btn">📂 Drive</a>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Drive hinzufügen</button>`}
                 ${obsidianUrl ? `<a href="${escapeAttr(obsidianUrl)}" target="_blank" rel="noopener" class="btn">🔮 Obsidian</a>` : `<button class="btn" data-enter-project-edit="${p.id}">+ Obsidian hinzufügen</button>`}
+                ${projectResources.map(resource => `<a href="${escapeAttr(resource.url)}" target="_blank" rel="noopener" class="btn">🔗 ${escapeHtml(resource.title || resource.type || 'Ressource')}</a>`).join('')}
               </div>
             ` : `
               <div class="notice" style="margin:0 0 8px 0;">Noch keine Ressourcen verlinkt</div>
@@ -7416,6 +7699,7 @@ ${workMeta.nextThought || '—'}`,
           ${renderContextBanner()}
           <div class="panel-title"><h3>Import & Materialanalyse</h3></div>
           ${renderProjectHandoffImportSection()}
+          ${renderProjectBulkImportSection()}
           <div class="notice" style="margin-bottom:10px;">
             Import in Projekt: <strong>${contextProject ? escapeHtml(contextProject.title) : '— kein Projekt gewählt —'}</strong>
           </div>
@@ -13757,13 +14041,17 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
       }
 
       function ensureProjectDefaults(project) {
-        return Object.assign({
+        const clone = Object.assign({
           id: uid('p'),
           title: '',
           type: APP_TYPES[0],
           status: PROJECT_STATUS[0],
           summary: '',
           tags: [],
+          areas: [],
+          resources: [],
+          sourceContext: '',
+          externalId: '',
           mainChatUrl: '',
           mainChatId: '',
           driveUrl: '',
@@ -13778,6 +14066,12 @@ Gib am Ende ausschließlich ein gültiges JSON-Handoff in exakt diesem Format zu
           lastSprintCompletedAt: '',
           lastCodeAnalysisCompletedAt: ''
         }, project || {});
+        clone.tags = Array.isArray(clone.tags) ? clone.tags.map(x => String(x || '').trim()).filter(Boolean) : [];
+        clone.areas = Array.isArray(clone.areas) ? clone.areas.map(x => String(x || '').trim()).filter(Boolean) : [];
+        clone.resources = Array.isArray(clone.resources) ? clone.resources.map(normalizeProjectResourceForStorage).filter(Boolean) : [];
+        clone.sourceContext = String(clone.sourceContext || '');
+        clone.externalId = String(clone.externalId || '').trim();
+        return clone;
       }
 
       const CHAT_WORK_MODES = { agent: 'agent', learning: 'learning' };
