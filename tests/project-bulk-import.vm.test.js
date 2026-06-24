@@ -120,6 +120,29 @@ const secretPreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL
 assert.equal(secretPreview.entries[0].resources.length, 0, 'Secret-haltige Ressourcen-URL wird nicht gespeichert');
 assert.match(secretPreview.entries[0].warnings.join('\n'), /Secret/);
 
+api.setState(api.defaultState());
+const unsafeJsPreview = api.analyzeProjectBulkImport(payload([{ title: 'Unsafe JS', resources: [{ title: 'Bad', url: 'javascript:alert(1)' }] }]));
+assert.equal(unsafeJsPreview.entries[0].resources.length, 0, 'JavaScript-Scheme wird nicht als Ressource übernommen');
+assert.match(unsafeJsPreview.entries[0].warnings.join('\n'), /unsicherem URL-Schema/);
+api.setBulkState({ rawJson: payload([]), preview: unsafeJsPreview, summary: '', error: '' });
+api.confirmProjectBulkImport();
+assert.equal(api.getState().projects[0].resources.length, 0, 'JavaScript-Scheme wird beim Confirm nicht gespeichert');
+
+api.setState(api.defaultState());
+const unsafeDataPreview = api.analyzeProjectBulkImport(payload([{ title: 'Unsafe Data', resources: [{ title: 'Bad Data', url: 'data:text/html,<script>alert(1)</script>' }] }]));
+assert.equal(unsafeDataPreview.entries[0].resources.length, 0, 'Data-Scheme wird nicht als Ressource übernommen');
+api.setBulkState({ rawJson: payload([]), preview: unsafeDataPreview, summary: '', error: '' });
+api.confirmProjectBulkImport();
+assert.equal(api.getState().projects[0].resources.length, 0, 'Data-Scheme wird beim Confirm nicht gespeichert');
+
+api.setState(api.defaultState());
+const obsidianPreview = api.analyzeProjectBulkImport(payload([{ title: 'Obsidian Projekt', resources: [{ title: 'Vault-Link', url: 'obsidian://open?vault=Test&file=Projekt' }] }]));
+assert.equal(obsidianPreview.entries[0].resources.length, 1, 'Obsidian-Scheme wird als Ressource übernommen');
+assert.equal(obsidianPreview.entries[0].resources[0].url, 'obsidian://open?vault=Test&file=Projekt');
+api.setBulkState({ rawJson: payload([]), preview: obsidianPreview, summary: '', error: '' });
+api.confirmProjectBulkImport();
+assert.equal(api.getState().projects[0].resources[0].url, 'obsidian://open?vault=Test&file=Projekt', 'Obsidian-Scheme wird beim Confirm gespeichert');
+
 function assertSinglePayloadDuplicateImport(projects, expectedReasonPattern) {
   api.setState(api.defaultState());
   const duplicatePreview = api.analyzeProjectBulkImport(payload(projects));

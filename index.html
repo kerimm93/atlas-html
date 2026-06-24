@@ -6616,12 +6616,31 @@ ${workMeta.nextThought || '—'}`,
         return /([?&](token|access_token|api[_-]?key|key|secret|password|passphrase|auth|signature|sig)=)|(?:bearer\s+[a-z0-9._~+\/-]+)/i.test(text);
       }
 
+      function isAllowedProjectResourceUrl(url) {
+        const text = String(url || '').trim();
+        if (!text || urlLooksLikeSecret(text)) return false;
+        const schemeMatch = text.match(/^([a-z][a-z0-9+.-]*):/i);
+        if (!schemeMatch) return false;
+        const scheme = schemeMatch[1].toLowerCase() + ':';
+        if (scheme === 'http:' || scheme === 'https:') return /^https?:\/\/\S+/i.test(text);
+        if (scheme === 'obsidian:') return /^obsidian:\S+/i.test(text);
+        return false;
+      }
+
+      function getProjectResourceUrlRejectionReason(url) {
+        const text = String(url || '').trim();
+        if (!text) return 'empty';
+        if (urlLooksLikeSecret(text)) return 'secret';
+        if (!isAllowedProjectResourceUrl(text)) return 'unsafe';
+        return '';
+      }
+
       function normalizeProjectResourceForStorage(resource, defaults = {}) {
         if (!resource || typeof resource !== 'object' || Array.isArray(resource)) return null;
         const now = new Date().toISOString();
         const type = String(resource.type || defaults.type || 'other').trim();
         const url = String(resource.url || resource.href || '').trim();
-        if (!url || urlLooksLikeSecret(url)) return null;
+        if (!isAllowedProjectResourceUrl(url)) return null;
         return {
           id: String(resource.id || '').trim() || uid('res'),
           type: PROJECT_RESOURCE_TYPES.includes(type) ? type : 'other',
@@ -6660,11 +6679,18 @@ ${workMeta.nextThought || '—'}`,
           if (entry.resources && !Array.isArray(entry.resources)) warnings.push('resources ist kein Array und wurde ignoriert.');
           const resources = rawResources.map(resource => {
             const normalized = normalizeProjectResourceForStorage(resource, { externalId, source });
-            if (!normalized && resource && typeof resource === 'object' && String(resource.url || '').trim()) warnings.push(`Ressource wegen möglichem Secret nicht gespeichert: ${String(resource.title || resource.url || '').slice(0, 80)}`);
+            const resourceUrl = resource && typeof resource === 'object' ? String(resource.url || resource.href || '').trim() : '';
+            if (!normalized && resourceUrl) {
+              const rejectionReason = getProjectResourceUrlRejectionReason(resourceUrl);
+              if (rejectionReason === 'secret') warnings.push(`Ressource wegen möglichem Secret nicht gespeichert: ${String(resource.title || resourceUrl || '').slice(0, 80)}`);
+              else if (rejectionReason === 'unsafe') warnings.push(`Ressource wegen unsicherem URL-Schema nicht gespeichert: ${String(resource.title || resourceUrl || '').slice(0, 80)}`);
+            }
             return normalized;
           }).filter(Boolean);
           if (notionUrl) {
-            if (urlLooksLikeSecret(notionUrl)) warnings.push('notionUrl enthält vermutlich ein Secret und wurde nicht gespeichert.');
+            const notionUrlRejectionReason = getProjectResourceUrlRejectionReason(notionUrl);
+            if (notionUrlRejectionReason === 'secret') warnings.push('notionUrl enthält vermutlich ein Secret und wurde nicht gespeichert.');
+            else if (notionUrlRejectionReason === 'unsafe') warnings.push('notionUrl wurde wegen unsicherem URL-Schema nicht gespeichert.');
             else if (!resources.some(resource => resource.url === notionUrl)) resources.push(normalizeProjectResourceForStorage({ type: 'notion', title: 'Notion-Projektseite', url: notionUrl, externalId, source }, { source }));
           }
           const notes = Array.isArray(entry.notes) ? entry.notes.filter(n => n && typeof n === 'object' && String(n.text || '').trim()).map(n => ({ text: String(n.text || '').trim(), type: NOTE_TYPES.includes(String(n.type || '').trim()) ? String(n.type || '').trim() : 'note' })) : [];
@@ -6682,7 +6708,7 @@ ${workMeta.nextThought || '—'}`,
             areas: stringArrayOrEmpty(entry.areas),
             sourceContext: String(entry.sourceContext || '').trim(),
             externalId,
-            notionUrl: urlLooksLikeSecret(notionUrl) ? '' : notionUrl,
+            notionUrl: isAllowedProjectResourceUrl(notionUrl) ? notionUrl : '',
             resources,
             notes,
             proposedFeatures,
