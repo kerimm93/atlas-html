@@ -15,7 +15,10 @@ let instrumentedScript = inlineScript.replace('      function renderView() {', '
 const hook = `      globalThis.__atlasProjectBulkImportTest = {
         ATLAS_PROJECT_BULK_IMPORT_TYPE,
         analyzeProjectBulkImport,
+        applyConservativeProjectBulkUpdate,
+        buildProjectBulkImportCleanupPrompt,
         confirmProjectBulkImport,
+        getProjectBulkImportReviewSummary,
         createProjectFromData,
         defaultState,
         ensureDefaults,
@@ -120,6 +123,34 @@ const secretPreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL
 assert.equal(secretPreview.entries[0].resources.length, 0, 'Secret-haltige Ressourcen-URL wird nicht gespeichert');
 assert.match(secretPreview.entries[0].warnings.join('\n'), /Secret/);
 
+const secretUrlWithoutTitle = 'https://example.test/private?token=abc';
+const secretWithoutTitlePreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL Test', resources: [{ url: secretUrlWithoutTitle }] }]));
+const secretWithoutTitleWarnings = secretWithoutTitlePreview.entries[0].warnings.join('\n');
+assert.equal(secretWithoutTitlePreview.entries[0].resources.length, 0, 'Secret-URL ohne Titel wird abgelehnt');
+assert.doesNotMatch(secretWithoutTitleWarnings, /token=abc/, 'Preview-Warnings leaken keinen Token-Parameter');
+assert.doesNotMatch(secretWithoutTitleWarnings, new RegExp(secretUrlWithoutTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Preview-Warnings leaken nicht die vollständige abgelehnte URL');
+const secretWithoutTitlePrompt = api.buildProjectBulkImportCleanupPrompt(secretWithoutTitlePreview);
+assert.doesNotMatch(secretWithoutTitlePrompt, /token=abc/, 'Cleanup-Prompt leakt keinen Token-Parameter');
+assert.doesNotMatch(secretWithoutTitlePrompt, new RegExp(secretUrlWithoutTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Cleanup-Prompt leakt nicht die vollständige abgelehnte URL');
+
+const secretUrlWithTitle = 'https://example.test/private?token=abc';
+const secretWithTitlePreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL Test', resources: [{ title: 'Privater Notion-Link', url: secretUrlWithTitle }] }]));
+const secretWithTitleWarnings = secretWithTitlePreview.entries[0].warnings.join('\n');
+assert.equal(secretWithTitlePreview.entries[0].resources.length, 0, 'Secret-URL mit Titel wird abgelehnt');
+assert.match(secretWithTitleWarnings, /Privater Notion-Link/, 'Harmloser Ressourcentitel bleibt in Preview-Warning erhalten');
+assert.doesNotMatch(secretWithTitleWarnings, /token=abc/, 'Preview-Warnings mit Titel leaken keinen Token-Parameter');
+assert.doesNotMatch(secretWithTitleWarnings, new RegExp(secretUrlWithTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Preview-Warnings mit Titel leaken nicht die vollständige URL');
+const secretWithTitlePrompt = api.buildProjectBulkImportCleanupPrompt(secretWithTitlePreview);
+assert.match(secretWithTitlePrompt, /Privater Notion-Link/, 'Harmloser Ressourcentitel bleibt im Prompt erhalten');
+assert.doesNotMatch(secretWithTitlePrompt, /token=abc/, 'Cleanup-Prompt mit Titel leakt keinen Token-Parameter');
+assert.doesNotMatch(secretWithTitlePrompt, new RegExp(secretUrlWithTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Cleanup-Prompt mit Titel leakt nicht die vollständige URL');
+
+const legacyUnsafePreview = api.analyzeProjectBulkImport(payload([{ title: 'Legacy Unsafe Warning' }]));
+legacyUnsafePreview.entries[0].warnings.push('Alte Warnung mit URL https://example.test/private?token=abc');
+const legacyUnsafePrompt = api.buildProjectBulkImportCleanupPrompt(legacyUnsafePreview);
+assert.doesNotMatch(legacyUnsafePrompt, /token=abc/, 'Cleanup-Prompt filtert tokenhaltige Alt-Warnings defensiv');
+assert.doesNotMatch(legacyUnsafePrompt, /https:\/\/example\.test\/private\?token=abc/, 'Cleanup-Prompt filtert vollständige URLs aus Alt-Warnings defensiv');
+
 api.setState(api.defaultState());
 const unsafeJsPreview = api.analyzeProjectBulkImport(payload([{ title: 'Unsafe JS', resources: [{ title: 'Bad', url: 'javascript:alert(1)' }] }]));
 assert.equal(unsafeJsPreview.entries[0].resources.length, 0, 'JavaScript-Scheme wird nicht als Ressource übernommen');
@@ -168,6 +199,89 @@ assertSinglePayloadDuplicateImport([
   { title: 'Payload Titel' },
   { title: 'Payload Titel' }
 ], /Doppelt im Import-Payload: sehr ähnlicher Titel/);
+
+
+
+api.setState(api.defaultState());
+const existingProject = api.createProjectFromData({
+  title: 'Bestehend Alpha',
+  summary: 'Bestehende Summary',
+  currentFocus: '',
+  nextStep: 'Nicht überschreiben',
+  tags: ['Denken'],
+  areas: ['Atlas'],
+  resources: [{ type: 'notion', title: 'Alt', url: 'https://example.test/alt', externalId: 'old' }]
+});
+let updatePreview = api.analyzeProjectBulkImport(payload([{
+  title: 'Bestehend Alpha Update',
+  summary: 'Neue Summary',
+  currentFocus: 'Neuer Fokus',
+  nextStep: 'Neuer Schritt',
+  tags: ['denken', 'Schreiben'],
+  areas: ['atlas', 'Import'],
+  notionUrl: 'https://example.test/alt',
+  resources: [
+    { type: 'markdown', title: 'Neu', url: 'https://example.test/neu.md' },
+    { type: 'markdown', title: 'Unsicher', url: 'javascript:alert(1)' }
+  ],
+  notes: [{ text: 'Neue Notiz', type: 'idea' }, { text: 'Neue Notiz', type: 'idea' }],
+  proposedFeatures: [{ title: 'Feature Kandidat' }]
+}]));
+assert.equal(updatePreview.counts.duplicates, 1, 'Update-Kandidat wird als Dublette erkannt');
+assert.equal(api.getProjectBulkImportReviewSummary(updatePreview).discard, 1, 'Dublette wird standardmäßig verworfen');
+api.setBulkState({ rawJson: payload([]), preview: updatePreview, summary: '', error: '', cleanupPrompt: '' });
+api.confirmProjectBulkImport();
+state = api.getState();
+assert.equal(state.projects.length, 1, 'discard schreibt kein neues Projekt');
+assert.equal(state.projects[0].summary, 'Bestehende Summary', 'discard verändert bestehende Summary nicht');
+
+updatePreview = api.analyzeProjectBulkImport(payload([{
+  title: 'Bestehend Alpha Update',
+  summary: 'Neue Summary',
+  currentFocus: 'Neuer Fokus',
+  nextStep: 'Neuer Schritt',
+  tags: ['denken', 'Schreiben'],
+  areas: ['atlas', 'Import'],
+  notionUrl: 'https://example.test/alt',
+  resources: [{ type: 'markdown', title: 'Neu', url: 'https://example.test/neu.md' }],
+  notes: [{ text: 'Neue Notiz', type: 'idea' }, { text: 'Neue Notiz', type: 'idea' }],
+  proposedFeatures: [{ title: 'Feature Kandidat' }]
+}]));
+updatePreview.entries[0].reviewAction = 'update-existing';
+updatePreview.entries[0].targetProjectId = existingProject.id;
+api.setBulkState({ rawJson: payload([]), preview: updatePreview, summary: '', error: '', cleanupPrompt: '' });
+api.confirmProjectBulkImport();
+state = api.getState();
+const updatedProject = state.projects[0];
+assert.equal(updatedProject.summary, 'Bestehende Summary', 'Update überschreibt nicht-leere Summary nicht');
+assert.equal(updatedProject.currentFocus, 'Neuer Fokus', 'Update füllt leeren Fokus');
+assert.equal(updatedProject.nextStep, 'Nicht überschreiben', 'Update überschreibt nicht-leeren nächsten Schritt nicht');
+assert.deepEqual(updatedProject.tags, ['Denken', 'Schreiben'], 'Tags werden case-insensitiv additiv dedupliziert');
+assert.deepEqual(updatedProject.areas, ['Atlas', 'Import'], 'Areas werden case-insensitiv additiv dedupliziert');
+assert.equal(updatedProject.resources.length, 2, 'Ressourcen werden additiv ergänzt');
+assert.equal(state.notes.length, 1, 'Notes werden additiv global dedupliziert angelegt');
+assert.equal(state.notes[0].projectId, existingProject.id, 'Note wird Zielprojekt zugeordnet');
+assert.match(api.getBulkState().summary, /Projektbaustein-Kandidaten wurden im Update-MVP nicht übernommen/, 'Feature-Kandidaten werden bewusst nicht übernommen');
+
+const incompletePreview = api.analyzeProjectBulkImport(payload([{ title: 'Bestehend Alpha ähnlich' }]));
+incompletePreview.entries[0].reviewAction = 'update-existing';
+incompletePreview.entries[0].targetProjectId = '';
+assert.equal(api.getProjectBulkImportReviewSummary(incompletePreview).canApply, false, 'Update ohne Zielprojekt blockiert Anwendung');
+
+const invalidDecisionPreview = api.analyzeProjectBulkImport(payload([{ title: '   ' }]));
+invalidDecisionPreview.entries[0].reviewAction = 'create-new';
+assert.equal(api.getProjectBulkImportReviewSummary(invalidDecisionPreview).canApply, false, 'Ungültiger Eintrag kann nicht importiert werden');
+
+const cleanupPreview = api.analyzeProjectBulkImport(payload([
+  { title: 'Neues Projekt Cleanup' },
+  { title: 'Bestehend Alpha Cleanup', notionUrl: 'https://example.test/alt' },
+  { title: '' }
+]));
+const cleanupPrompt = api.buildProjectBulkImportCleanupPrompt(cleanupPreview);
+assert.match(cleanupPrompt, /Neues Projekt Cleanup/, 'Bereinigungs-Prompt enthält neue Projekte');
+assert.match(cleanupPrompt, /Bestehend Alpha Cleanup/, 'Bereinigungs-Prompt enthält Dubletten\/Updates');
+assert.match(cleanupPrompt, /Ungültige Einträge/, 'Bereinigungs-Prompt enthält ungültige Einträge');
+assert.doesNotMatch(cleanupPrompt, /token=abc/, 'Bereinigungs-Prompt übernimmt keine Secret-URLs');
 
 const handoff = api.parseAtlasProjectHandoffJson(JSON.stringify({
   type: 'atlas-project-handoff-v1',
