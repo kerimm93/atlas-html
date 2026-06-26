@@ -6643,6 +6643,13 @@ ${workMeta.nextThought || '—'}`,
         return '';
       }
 
+      function getSafeRejectedResourceLabel(resource) {
+        if (!resource || typeof resource !== 'object' || Array.isArray(resource)) return '';
+        const title = String(resource.title || '').trim();
+        if (!title || urlLooksLikeSecret(title) || /\b(?:https?:\/\/|obsidian:|[a-z][a-z0-9+.-]*:\/\/)/i.test(title)) return '';
+        return title.slice(0, 80);
+      }
+
       function normalizeProjectResourceForStorage(resource, defaults = {}) {
         if (!resource || typeof resource !== 'object' || Array.isArray(resource)) return null;
         const now = new Date().toISOString();
@@ -6690,8 +6697,13 @@ ${workMeta.nextThought || '—'}`,
             const resourceUrl = resource && typeof resource === 'object' ? String(resource.url || resource.href || '').trim() : '';
             if (!normalized && resourceUrl) {
               const rejectionReason = getProjectResourceUrlRejectionReason(resourceUrl);
-              if (rejectionReason === 'secret') warnings.push(`Ressource wegen möglichem Secret nicht gespeichert: ${String(resource.title || resourceUrl || '').slice(0, 80)}`);
-              else if (rejectionReason === 'unsafe') warnings.push(`Ressource wegen unsicherem URL-Schema nicht gespeichert: ${String(resource.title || resourceUrl || '').slice(0, 80)}`);
+              if (rejectionReason === 'secret') {
+                const safeLabel = getSafeRejectedResourceLabel(resource);
+                warnings.push(safeLabel ? `Ressource wegen möglichem Secret nicht gespeichert: ${safeLabel}` : 'Ressource wurde wegen möglichem Secret verworfen.');
+              } else if (rejectionReason === 'unsafe') {
+                const safeLabel = getSafeRejectedResourceLabel(resource);
+                warnings.push(safeLabel ? `Ressource wegen unsicherem URL-Schema nicht gespeichert: ${safeLabel}` : 'Ressource wurde wegen unsicherer oder nicht erlaubter URL verworfen.');
+              }
             }
             return normalized;
           }).filter(Boolean);
@@ -6901,12 +6913,22 @@ ${workMeta.nextThought || '—'}`,
         return isAllowedProjectResourceUrl(text) && !urlLooksLikeSecret(text) ? text : '';
       }
 
+      function sanitizePromptWarning(warning) {
+        const text = String(warning || '').trim();
+        if (!text) return '';
+        if (urlLooksLikeSecret(text)) return 'Warnung enthielt potenziell sensitive URL-/Token-Daten und wurde gekürzt.';
+        if (/\b(?:https?:\/\/|obsidian:|[a-z][a-z0-9+.-]*:\/\/)/i.test(text)) return 'Warnung enthielt eine URL und wurde für den Bereinigungs-Prompt gekürzt.';
+        if (/(?:token|access[_-]?token|api[_-]?key|key|secret|password|passphrase|signature|sig|auth)\s*=|bearer\s+[a-z0-9._~+\/-]+/i.test(text)) return 'Warnung enthielt potenziell sensitive Werte und wurde gekürzt.';
+        return text.slice(0, 180);
+      }
+
       function buildProjectBulkImportCleanupPrompt(preview) {
         if (!preview || !Array.isArray(preview.entries)) return '';
         const lines = [];
         const addEntry = entry => {
           const urls = (entry.resources || []).map(r => sanitizePromptUrl(r.url)).filter(Boolean).slice(0, 5);
-          return `- ${entry.title || '(ohne Titel)'} — Grund: ${entry.reason || '—'}${urls.length ? ` — geprüfte URLs: ${urls.join(', ')}` : ''}${entry.warnings && entry.warnings.length ? ` — Warnungen: ${entry.warnings.join('; ')}` : ''}`;
+          const warnings = (entry.warnings || []).map(sanitizePromptWarning).filter(Boolean);
+          return `- ${entry.title || '(ohne Titel)'} — Grund: ${entry.reason || '—'}${urls.length ? ` — geprüfte URLs: ${urls.join(', ')}` : ''}${warnings.length ? ` — Warnungen: ${warnings.join('; ')}` : ''}`;
         };
         lines.push('Du hilfst beim Bereinigen einer Atlas-Web Projektliste aus Notion/Claude. Atlas ist ein lokaler Projektatlas für Denk-, Schreib-, Lern-, Reflexions- und Projektarbeit.');
         lines.push('', 'Zielvertrag: JSON mit type "atlas-project-bulk-import-v1", meta { source, exportedAt, sourceTool } und projects[]. Pflichtfeld ist title; optional sind summary, status, currentFocus, nextStep, tags, areas, sourceContext, externalId, notionUrl, resources[{type,title,url,externalId}], notes[{text,type}] und proposedFeatures[{title,description,category,priority}]. Erlaubte Ressourcen-URLs sind nur http, https und obsidian; Secrets/Tokens dürfen nicht enthalten sein.');

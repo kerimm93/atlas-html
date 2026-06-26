@@ -123,6 +123,34 @@ const secretPreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL
 assert.equal(secretPreview.entries[0].resources.length, 0, 'Secret-haltige Ressourcen-URL wird nicht gespeichert');
 assert.match(secretPreview.entries[0].warnings.join('\n'), /Secret/);
 
+const secretUrlWithoutTitle = 'https://example.test/private?token=abc';
+const secretWithoutTitlePreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL Test', resources: [{ url: secretUrlWithoutTitle }] }]));
+const secretWithoutTitleWarnings = secretWithoutTitlePreview.entries[0].warnings.join('\n');
+assert.equal(secretWithoutTitlePreview.entries[0].resources.length, 0, 'Secret-URL ohne Titel wird abgelehnt');
+assert.doesNotMatch(secretWithoutTitleWarnings, /token=abc/, 'Preview-Warnings leaken keinen Token-Parameter');
+assert.doesNotMatch(secretWithoutTitleWarnings, new RegExp(secretUrlWithoutTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Preview-Warnings leaken nicht die vollständige abgelehnte URL');
+const secretWithoutTitlePrompt = api.buildProjectBulkImportCleanupPrompt(secretWithoutTitlePreview);
+assert.doesNotMatch(secretWithoutTitlePrompt, /token=abc/, 'Cleanup-Prompt leakt keinen Token-Parameter');
+assert.doesNotMatch(secretWithoutTitlePrompt, new RegExp(secretUrlWithoutTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Cleanup-Prompt leakt nicht die vollständige abgelehnte URL');
+
+const secretUrlWithTitle = 'https://example.test/private?token=abc';
+const secretWithTitlePreview = api.analyzeProjectBulkImport(payload([{ title: 'Secret URL Test', resources: [{ title: 'Privater Notion-Link', url: secretUrlWithTitle }] }]));
+const secretWithTitleWarnings = secretWithTitlePreview.entries[0].warnings.join('\n');
+assert.equal(secretWithTitlePreview.entries[0].resources.length, 0, 'Secret-URL mit Titel wird abgelehnt');
+assert.match(secretWithTitleWarnings, /Privater Notion-Link/, 'Harmloser Ressourcentitel bleibt in Preview-Warning erhalten');
+assert.doesNotMatch(secretWithTitleWarnings, /token=abc/, 'Preview-Warnings mit Titel leaken keinen Token-Parameter');
+assert.doesNotMatch(secretWithTitleWarnings, new RegExp(secretUrlWithTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Preview-Warnings mit Titel leaken nicht die vollständige URL');
+const secretWithTitlePrompt = api.buildProjectBulkImportCleanupPrompt(secretWithTitlePreview);
+assert.match(secretWithTitlePrompt, /Privater Notion-Link/, 'Harmloser Ressourcentitel bleibt im Prompt erhalten');
+assert.doesNotMatch(secretWithTitlePrompt, /token=abc/, 'Cleanup-Prompt mit Titel leakt keinen Token-Parameter');
+assert.doesNotMatch(secretWithTitlePrompt, new RegExp(secretUrlWithTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Cleanup-Prompt mit Titel leakt nicht die vollständige URL');
+
+const legacyUnsafePreview = api.analyzeProjectBulkImport(payload([{ title: 'Legacy Unsafe Warning' }]));
+legacyUnsafePreview.entries[0].warnings.push('Alte Warnung mit URL https://example.test/private?token=abc');
+const legacyUnsafePrompt = api.buildProjectBulkImportCleanupPrompt(legacyUnsafePreview);
+assert.doesNotMatch(legacyUnsafePrompt, /token=abc/, 'Cleanup-Prompt filtert tokenhaltige Alt-Warnings defensiv');
+assert.doesNotMatch(legacyUnsafePrompt, /https:\/\/example\.test\/private\?token=abc/, 'Cleanup-Prompt filtert vollständige URLs aus Alt-Warnings defensiv');
+
 api.setState(api.defaultState());
 const unsafeJsPreview = api.analyzeProjectBulkImport(payload([{ title: 'Unsafe JS', resources: [{ title: 'Bad', url: 'javascript:alert(1)' }] }]));
 assert.equal(unsafeJsPreview.entries[0].resources.length, 0, 'JavaScript-Scheme wird nicht als Ressource übernommen');
