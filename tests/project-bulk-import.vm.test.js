@@ -15,7 +15,10 @@ let instrumentedScript = inlineScript.replace('      function renderView() {', '
 const hook = `      globalThis.__atlasProjectBulkImportTest = {
         ATLAS_PROJECT_BULK_IMPORT_TYPE,
         analyzeProjectBulkImport,
+        applyConservativeProjectBulkUpdate,
+        buildProjectBulkImportCleanupPrompt,
         confirmProjectBulkImport,
+        getProjectBulkImportReviewSummary,
         createProjectFromData,
         defaultState,
         ensureDefaults,
@@ -168,6 +171,89 @@ assertSinglePayloadDuplicateImport([
   { title: 'Payload Titel' },
   { title: 'Payload Titel' }
 ], /Doppelt im Import-Payload: sehr ähnlicher Titel/);
+
+
+
+api.setState(api.defaultState());
+const existingProject = api.createProjectFromData({
+  title: 'Bestehend Alpha',
+  summary: 'Bestehende Summary',
+  currentFocus: '',
+  nextStep: 'Nicht überschreiben',
+  tags: ['Denken'],
+  areas: ['Atlas'],
+  resources: [{ type: 'notion', title: 'Alt', url: 'https://example.test/alt', externalId: 'old' }]
+});
+let updatePreview = api.analyzeProjectBulkImport(payload([{
+  title: 'Bestehend Alpha Update',
+  summary: 'Neue Summary',
+  currentFocus: 'Neuer Fokus',
+  nextStep: 'Neuer Schritt',
+  tags: ['denken', 'Schreiben'],
+  areas: ['atlas', 'Import'],
+  notionUrl: 'https://example.test/alt',
+  resources: [
+    { type: 'markdown', title: 'Neu', url: 'https://example.test/neu.md' },
+    { type: 'markdown', title: 'Unsicher', url: 'javascript:alert(1)' }
+  ],
+  notes: [{ text: 'Neue Notiz', type: 'idea' }, { text: 'Neue Notiz', type: 'idea' }],
+  proposedFeatures: [{ title: 'Feature Kandidat' }]
+}]));
+assert.equal(updatePreview.counts.duplicates, 1, 'Update-Kandidat wird als Dublette erkannt');
+assert.equal(api.getProjectBulkImportReviewSummary(updatePreview).discard, 1, 'Dublette wird standardmäßig verworfen');
+api.setBulkState({ rawJson: payload([]), preview: updatePreview, summary: '', error: '', cleanupPrompt: '' });
+api.confirmProjectBulkImport();
+state = api.getState();
+assert.equal(state.projects.length, 1, 'discard schreibt kein neues Projekt');
+assert.equal(state.projects[0].summary, 'Bestehende Summary', 'discard verändert bestehende Summary nicht');
+
+updatePreview = api.analyzeProjectBulkImport(payload([{
+  title: 'Bestehend Alpha Update',
+  summary: 'Neue Summary',
+  currentFocus: 'Neuer Fokus',
+  nextStep: 'Neuer Schritt',
+  tags: ['denken', 'Schreiben'],
+  areas: ['atlas', 'Import'],
+  notionUrl: 'https://example.test/alt',
+  resources: [{ type: 'markdown', title: 'Neu', url: 'https://example.test/neu.md' }],
+  notes: [{ text: 'Neue Notiz', type: 'idea' }, { text: 'Neue Notiz', type: 'idea' }],
+  proposedFeatures: [{ title: 'Feature Kandidat' }]
+}]));
+updatePreview.entries[0].reviewAction = 'update-existing';
+updatePreview.entries[0].targetProjectId = existingProject.id;
+api.setBulkState({ rawJson: payload([]), preview: updatePreview, summary: '', error: '', cleanupPrompt: '' });
+api.confirmProjectBulkImport();
+state = api.getState();
+const updatedProject = state.projects[0];
+assert.equal(updatedProject.summary, 'Bestehende Summary', 'Update überschreibt nicht-leere Summary nicht');
+assert.equal(updatedProject.currentFocus, 'Neuer Fokus', 'Update füllt leeren Fokus');
+assert.equal(updatedProject.nextStep, 'Nicht überschreiben', 'Update überschreibt nicht-leeren nächsten Schritt nicht');
+assert.deepEqual(updatedProject.tags, ['Denken', 'Schreiben'], 'Tags werden case-insensitiv additiv dedupliziert');
+assert.deepEqual(updatedProject.areas, ['Atlas', 'Import'], 'Areas werden case-insensitiv additiv dedupliziert');
+assert.equal(updatedProject.resources.length, 2, 'Ressourcen werden additiv ergänzt');
+assert.equal(state.notes.length, 1, 'Notes werden additiv global dedupliziert angelegt');
+assert.equal(state.notes[0].projectId, existingProject.id, 'Note wird Zielprojekt zugeordnet');
+assert.match(api.getBulkState().summary, /Projektbaustein-Kandidaten wurden im Update-MVP nicht übernommen/, 'Feature-Kandidaten werden bewusst nicht übernommen');
+
+const incompletePreview = api.analyzeProjectBulkImport(payload([{ title: 'Bestehend Alpha ähnlich' }]));
+incompletePreview.entries[0].reviewAction = 'update-existing';
+incompletePreview.entries[0].targetProjectId = '';
+assert.equal(api.getProjectBulkImportReviewSummary(incompletePreview).canApply, false, 'Update ohne Zielprojekt blockiert Anwendung');
+
+const invalidDecisionPreview = api.analyzeProjectBulkImport(payload([{ title: '   ' }]));
+invalidDecisionPreview.entries[0].reviewAction = 'create-new';
+assert.equal(api.getProjectBulkImportReviewSummary(invalidDecisionPreview).canApply, false, 'Ungültiger Eintrag kann nicht importiert werden');
+
+const cleanupPreview = api.analyzeProjectBulkImport(payload([
+  { title: 'Neues Projekt Cleanup' },
+  { title: 'Bestehend Alpha Cleanup', notionUrl: 'https://example.test/alt' },
+  { title: '' }
+]));
+const cleanupPrompt = api.buildProjectBulkImportCleanupPrompt(cleanupPreview);
+assert.match(cleanupPrompt, /Neues Projekt Cleanup/, 'Bereinigungs-Prompt enthält neue Projekte');
+assert.match(cleanupPrompt, /Bestehend Alpha Cleanup/, 'Bereinigungs-Prompt enthält Dubletten\/Updates');
+assert.match(cleanupPrompt, /Ungültige Einträge/, 'Bereinigungs-Prompt enthält ungültige Einträge');
+assert.doesNotMatch(cleanupPrompt, /token=abc/, 'Bereinigungs-Prompt übernimmt keine Secret-URLs');
 
 const handoff = api.parseAtlasProjectHandoffJson(JSON.stringify({
   type: 'atlas-project-handoff-v1',

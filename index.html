@@ -2069,7 +2069,7 @@
         showAllProjects: false,
         projectEditMode: false,
         projectHandoffImport: { promptDraft: '', jsonPrompt: '', rawJson: '', preview: null, summary: '', error: '' },
-        projectBulkImport: { rawJson: '', preview: null, summary: '', error: '' },
+        projectBulkImport: { rawJson: '', preview: null, summary: '', error: '', cleanupPrompt: '' },
         importDraft: { html: '', prompt: '', analysisPrompt: '', cleanupPrompt: '', projectId: '' },
         codeAnalysisPromptPrep: { scope: '', repoBranch: '', outputPrompt: '', mode: '' },
         chatWorkflow: { projectId: '', sourceChatId: '', sprintGoal: '', sprintStartPrompt: '', sprintHandoffPrompt: '', sprintStartJson: '', mainChatBootstrapJson: '', prompt: '', mode: '', sprintExecutionMode: SPRINT_EXECUTION_MODES.direct },
@@ -2415,7 +2415,8 @@
         if (!ui.filters || typeof ui.filters !== 'object') ui.filters = { pool: 'alle', status: 'alle', category: 'alle', search: '' };
         if (!ui.filters.pool) ui.filters.pool = 'alle';
         if (!ui.multiProjectImport || typeof ui.multiProjectImport !== 'object') ui.multiProjectImport = { rawText: '', prompt: '', resultJson: '', summary: '', updates: [], unmatchedNotes: [], visible: false };
-        if (!ui.projectBulkImport || typeof ui.projectBulkImport !== 'object') ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '' };
+        if (!ui.projectBulkImport || typeof ui.projectBulkImport !== 'object') ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '', cleanupPrompt: '' };
+        if (typeof ui.projectBulkImport.cleanupPrompt !== 'string') ui.projectBulkImport.cleanupPrompt = '';
         if (!ui.learningTracker || typeof ui.learningTracker !== 'object') ui.learningTracker = { projectId: 'all', scope: 'active', filter: 'all', search: '' };
         if (!ui.learningTracker.projectId) ui.learningTracker.projectId = 'all';
         if (!['active', 'completed', 'reference', 'all'].includes(ui.learningTracker.scope)) {
@@ -2972,13 +2973,15 @@
           state.preview = null;
           state.summary = '';
           state.error = '';
+          state.cleanupPrompt = '';
         });
         if ($('btnPreviewProjectBulkImport')) $('btnPreviewProjectBulkImport').addEventListener('click', () => {
           const state = getProjectBulkImportState();
           try {
             state.preview = analyzeProjectBulkImport(state.rawJson);
             state.error = '';
-            state.summary = 'Preview erstellt. Import schreibt nur eindeutig neue Projekte.';
+            state.cleanupPrompt = '';
+            state.summary = 'Preview erstellt. Bitte Review-Entscheidungen prüfen und erst dann anwenden.';
           } catch (error) {
             state.preview = null;
             state.summary = '';
@@ -2987,8 +2990,12 @@
           renderView();
         });
         if ($('btnConfirmProjectBulkImport')) $('btnConfirmProjectBulkImport').addEventListener('click', confirmProjectBulkImport);
+        if ($('btnBuildProjectBulkImportCleanupPrompt')) $('btnBuildProjectBulkImportCleanupPrompt').addEventListener('click', () => { const state = getProjectBulkImportState(); state.cleanupPrompt = buildProjectBulkImportCleanupPrompt(state.preview); renderView(); });
+        if ($('btnCopyProjectBulkImportCleanupPrompt')) $('btnCopyProjectBulkImportCleanupPrompt').addEventListener('click', () => copyTextToClipboard((getProjectBulkImportState().cleanupPrompt || ''), 'Bereinigungs-Prompt kopiert.'));
+        document.querySelectorAll('[data-bulk-review-action]').forEach(select => select.addEventListener('change', e => updateProjectBulkImportReviewAction(Number(e.target.dataset.bulkReviewAction), e.target.value)));
+        document.querySelectorAll('[data-bulk-target-project]').forEach(select => select.addEventListener('change', e => updateProjectBulkImportTargetProject(Number(e.target.dataset.bulkTargetProject), e.target.value)));
         if ($('btnResetProjectBulkImport')) $('btnResetProjectBulkImport').addEventListener('click', () => {
-          ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '' };
+          ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '', cleanupPrompt: '' };
           renderView();
         });
         if ($('btnDeleteProject')) $('btnDeleteProject').addEventListener('click', deleteProjectFromForm);
@@ -6603,7 +6610,8 @@ ${workMeta.nextThought || '—'}`,
       const PROJECT_RESOURCE_TYPES = ['notion', 'gpt-chat', 'claude-chat', 'obsidian', 'markdown', 'other'];
 
       function getProjectBulkImportState() {
-        if (!ui.projectBulkImport || typeof ui.projectBulkImport !== 'object') ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '' };
+        if (!ui.projectBulkImport || typeof ui.projectBulkImport !== 'object') ui.projectBulkImport = { rawJson: '', preview: null, summary: '', error: '', cleanupPrompt: '' };
+        if (typeof ui.projectBulkImport.cleanupPrompt !== 'string') ui.projectBulkImport.cleanupPrompt = '';
         return ui.projectBulkImport;
       }
 
@@ -6763,20 +6771,21 @@ ${workMeta.nextThought || '—'}`,
         const entries = [];
         normalized.projects.forEach(project => {
           if (!project.valid) {
-            entries.push(Object.assign({}, project, { status: 'invalid', statusLabel: 'ungültig', matches: [], payloadMatches: [], reason: project.reason || 'Ungültiger Eintrag.' }));
+            entries.push(Object.assign({}, project, { status: 'invalid', statusLabel: 'ungültig', matches: [], payloadMatches: [], reason: project.reason || 'Ungültiger Eintrag.', reviewAction: 'discard', targetProjectId: '', reviewError: '' }));
             return;
           }
           const matches = findProjectBulkImportMatches(project);
           if (matches.length) {
-            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: matches.some(m => m.reasons.some(r => /externalId|URL/.test(r))) ? 'möglicher Update-Kandidat' : 'Dublette', matches, payloadMatches: [], reason: matches.map(m => m.reasons.join(', ')).join('; ') }));
+            const strongMatches = matches.filter(m => m.reasons.some(r => /externalId|URL/.test(r)));
+            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: strongMatches.length ? 'möglicher Update-Kandidat' : 'Dublette', matches, payloadMatches: [], reason: matches.map(m => m.reasons.join(', ')).join('; '), reviewAction: 'discard', targetProjectId: strongMatches.length === 1 ? strongMatches[0].project.id : '', reviewError: '' }));
             return;
           }
           const payloadMatches = findProjectBulkImportPayloadMatches(project, entries);
           if (payloadMatches.length) {
-            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: 'Dublette', matches: [], payloadMatches, reason: payloadMatches.map(m => `Doppelt im Import-Payload: ${m.reasons.join(', ')}`).join('; ') }));
+            entries.push(Object.assign({}, project, { status: 'duplicate', statusLabel: 'Dublette', matches: [], payloadMatches, reason: payloadMatches.map(m => `Doppelt im Import-Payload: ${m.reasons.join(', ')}`).join('; '), reviewAction: 'discard', targetProjectId: '', reviewError: '' }));
             return;
           }
-          entries.push(Object.assign({}, project, { status: 'new', statusLabel: 'neu', matches: [], payloadMatches: [], reason: 'Eindeutig neues Projekt.' }));
+          entries.push(Object.assign({}, project, { status: 'new', statusLabel: 'neu', matches: [], payloadMatches: [], reason: 'Eindeutig neues Projekt.', reviewAction: 'create-new', targetProjectId: '', reviewError: '' }));
         });
         return {
           payload: normalized,
@@ -6790,35 +6799,166 @@ ${workMeta.nextThought || '—'}`,
         };
       }
 
+      function getProjectBulkImportReviewSummary(preview) {
+        const summary = { createNew: 0, updateExisting: 0, discard: 0, invalidBlocked: 0, incomplete: 0, invalidDecision: 0, canApply: false };
+        const entries = (preview && Array.isArray(preview.entries)) ? preview.entries : [];
+        entries.forEach(entry => {
+          const action = entry.reviewAction || (entry.status === 'new' ? 'create-new' : 'discard');
+          if (entry.status === 'invalid') {
+            summary.invalidBlocked += 1;
+            if (action !== 'discard') summary.invalidDecision += 1;
+            return;
+          }
+          if (action === 'create-new') summary.createNew += 1;
+          else if (action === 'update-existing') {
+            summary.updateExisting += 1;
+            if (!entry.targetProjectId) summary.incomplete += 1;
+          } else summary.discard += 1;
+          if (entry.status === 'duplicate' && action === 'create-new') summary.invalidDecision += 1;
+        });
+        summary.canApply = !!entries.length && !summary.incomplete && !summary.invalidDecision;
+        return summary;
+      }
+
+      function updateProjectBulkImportReviewAction(index, action) {
+        const state = getProjectBulkImportState();
+        const entry = state.preview && state.preview.entries && state.preview.entries[index];
+        if (!entry) return;
+        entry.reviewAction = ['create-new', 'update-existing', 'discard'].includes(action) ? action : 'discard';
+        if (entry.status === 'invalid') entry.reviewAction = 'discard';
+        state.summary = '';
+        renderView();
+      }
+
+      function updateProjectBulkImportTargetProject(index, projectId) {
+        const state = getProjectBulkImportState();
+        const entry = state.preview && state.preview.entries && state.preview.entries[index];
+        if (!entry) return;
+        entry.targetProjectId = String(projectId || '');
+        state.summary = '';
+        renderView();
+      }
+
+      function mergeStringList(existing, incoming) {
+        const result = Array.isArray(existing) ? existing.slice() : [];
+        const seen = new Set(result.map(item => normalizeText(item)));
+        stringArrayOrEmpty(incoming).forEach(item => { const key = normalizeText(item); if (key && !seen.has(key)) { result.push(item); seen.add(key); } });
+        return result;
+      }
+
+      function applyConservativeProjectBulkUpdate(existingProject, incomingEntry) {
+        const result = { changed: false, filledFields: [], addedTags: [], addedAreas: [], addedResources: [], addedNotes: [], skippedFields: [], skippedFeatures: [] };
+        if (!existingProject || !incomingEntry) return result;
+        ['summary', 'currentFocus', 'nextStep'].forEach(field => {
+          const incoming = String(incomingEntry[field] || '').trim();
+          if (!incoming) return;
+          if (!String(existingProject[field] || '').trim()) { existingProject[field] = incoming; result.filledFields.push(field); result.changed = true; }
+          else result.skippedFields.push(field);
+        });
+        const oldTags = existingProject.tags || [];
+        existingProject.tags = mergeStringList(oldTags, incomingEntry.tags);
+        result.addedTags = existingProject.tags.slice(oldTags.length);
+        const oldAreas = existingProject.areas || [];
+        existingProject.areas = mergeStringList(oldAreas, incomingEntry.areas);
+        result.addedAreas = existingProject.areas.slice(oldAreas.length);
+        if (result.addedTags.length || result.addedAreas.length) result.changed = true;
+        const existingResources = Array.isArray(existingProject.resources) ? existingProject.resources : [];
+        const seenResourceKeys = new Set(existingResources.map(r => `${String(r.url || '').trim()}|${String(r.externalId || '').trim()}`));
+        const seenResourceUrls = new Set(existingResources.map(r => String(r.url || '').trim()).filter(Boolean));
+        (Array.isArray(incomingEntry.resources) ? incomingEntry.resources : []).forEach(resource => {
+          const normalized = normalizeProjectResourceForStorage(resource);
+          if (!normalized) return;
+          const key = `${normalized.url}|${normalized.externalId}`;
+          if (seenResourceKeys.has(key) || seenResourceUrls.has(normalized.url)) return;
+          const now = new Date().toISOString();
+          const added = Object.assign({}, normalized, { id: uid('res'), createdAt: now, updatedAt: now });
+          existingResources.push(added);
+          seenResourceKeys.add(key);
+          seenResourceUrls.add(normalized.url);
+          result.addedResources.push(added);
+          result.changed = true;
+        });
+        existingProject.resources = existingResources;
+        const existingNoteKeys = new Set((Array.isArray(S.notes) ? S.notes : []).filter(note => note.projectId === existingProject.id).map(note => normalizeText(note.text)));
+        (Array.isArray(incomingEntry.notes) ? incomingEntry.notes : []).forEach(note => {
+          const text = String(note.text || '').trim();
+          const key = normalizeText(text);
+          if (!key || existingNoteKeys.has(key)) return;
+          const now = new Date().toISOString();
+          const added = ensureNoteDefaults({ id: uid('n'), projectId: existingProject.id, text, type: NOTE_TYPES.includes(note.type) ? note.type : 'note', status: 'open', processed: false, createdAt: now, updatedAt: now, sourceType: 'bulk-import-update' });
+          S.notes.push(added);
+          existingNoteKeys.add(key);
+          result.addedNotes.push(added);
+          result.changed = true;
+        });
+        if (Array.isArray(incomingEntry.proposedFeatures) && incomingEntry.proposedFeatures.length) result.skippedFeatures.push(`${incomingEntry.proposedFeatures.length} Projektbaustein-Kandidaten wurden im Update-MVP nicht übernommen.`);
+        if (result.changed) existingProject.updatedAt = new Date().toISOString();
+        return result;
+      }
+
+      function sanitizePromptUrl(url) {
+        const text = String(url || '').trim();
+        return isAllowedProjectResourceUrl(text) && !urlLooksLikeSecret(text) ? text : '';
+      }
+
+      function buildProjectBulkImportCleanupPrompt(preview) {
+        if (!preview || !Array.isArray(preview.entries)) return '';
+        const lines = [];
+        const addEntry = entry => {
+          const urls = (entry.resources || []).map(r => sanitizePromptUrl(r.url)).filter(Boolean).slice(0, 5);
+          return `- ${entry.title || '(ohne Titel)'} — Grund: ${entry.reason || '—'}${urls.length ? ` — geprüfte URLs: ${urls.join(', ')}` : ''}${entry.warnings && entry.warnings.length ? ` — Warnungen: ${entry.warnings.join('; ')}` : ''}`;
+        };
+        lines.push('Du hilfst beim Bereinigen einer Atlas-Web Projektliste aus Notion/Claude. Atlas ist ein lokaler Projektatlas für Denk-, Schreib-, Lern-, Reflexions- und Projektarbeit.');
+        lines.push('', 'Zielvertrag: JSON mit type "atlas-project-bulk-import-v1", meta { source, exportedAt, sourceTool } und projects[]. Pflichtfeld ist title; optional sind summary, status, currentFocus, nextStep, tags, areas, sourceContext, externalId, notionUrl, resources[{type,title,url,externalId}], notes[{text,type}] und proposedFeatures[{title,description,category,priority}]. Erlaubte Ressourcen-URLs sind nur http, https und obsidian; Secrets/Tokens dürfen nicht enthalten sein.');
+        lines.push('', 'Eindeutig neue Projekte:');
+        { const items = preview.entries.filter(e => e.status === 'new').map(addEntry); lines.push(...(items.length ? items : ['(keine)'])); }
+        lines.push('', 'Dubletten / Update-Kandidaten:');
+        { const items = preview.entries.filter(e => e.status === 'duplicate').map(addEntry); lines.push(...(items.length ? items : ['(keine)'])); }
+        lines.push('', 'Ungültige Einträge:');
+        { const items = preview.entries.filter(e => e.status === 'invalid').map(addEntry); lines.push(...(items.length ? items : ['(keine)'])); }
+        lines.push('', 'Arbeitsauftrag: Erkenne echte Dubletten, identifiziere eigenständige Projekte, schlage bessere Titel und Summaries vor, markiere mögliche Zusammenführungen und gib auf Wunsch ein bereinigtes atlas-project-bulk-import-v1 JSON aus. Keine automatische Anwendung, keine Secrets erfinden oder übernehmen.');
+        return lines.join('\n');
+      }
+
       function renderProjectBulkImportPreview(preview) {
         if (!preview) return '';
         const c = preview.counts || { total: 0, new: 0, duplicates: 0, invalid: 0 };
+        const review = getProjectBulkImportReviewSummary(preview);
+        const projectOptions = S.projects.map(project => `<option value="${escapeAttr(project.id)}">${escapeHtml(project.title || 'Unbenanntes Projekt')}</option>`).join('');
         return `
           <div class="notice notice-info" style="margin-top:10px;">Erkannt: ${c.total} · Neu: ${c.new} · Dubletten/Updates: ${c.duplicates} · Ungültig: ${c.invalid}</div>
+          <div class="notice" style="margin-top:10px;">Entscheidungen: Neu anzulegen ${review.createNew} · Aktualisieren ${review.updateExisting} · Verwerfen ${review.discard} · Blockiert/ungültig ${review.invalidBlocked} · Unvollständig ${review.incomplete}</div>
           <div class="list" style="margin-top:10px;">
-            ${preview.entries.map(entry => `
+            ${preview.entries.map((entry, index) => {
+              const action = entry.reviewAction || (entry.status === 'new' ? 'create-new' : 'discard');
+              const targetOptions = `<option value="">Projekt wählen…</option>${projectOptions}`.replace(`value="${escapeAttr(entry.targetProjectId || '')}"`, `value="${escapeAttr(entry.targetProjectId || '')}" selected`);
+              return `
               <div class="item">
-                <div class="row-top"><strong>${escapeHtml(entry.title || '(ohne Titel)')}</strong><span class="pill">${escapeHtml(entry.statusLabel)}</span></div>
-                <div class="mini">Grund: ${escapeHtml(entry.reason || '—')}</div>
-                <div class="mini">Ressourcen: ${entry.resources.length}${entry.notionUrl ? ' · Notion-URL erkannt' : ''}${entry.notes.length ? ` · ${entry.notes.length} Notizen nur angezeigt` : ''}${entry.proposedFeatures.length ? ` · ${entry.proposedFeatures.length} Projektbaustein-Kandidaten nur angezeigt` : ''}</div>
+                <div class="row-top"><strong>${escapeHtml(entry.title || '(ohne Titel)')}</strong><span class="pill">${escapeHtml(action === 'discard' ? (entry.status === 'invalid' ? 'ungültig' : 'verworfen') : action === 'create-new' ? 'wird importiert' : 'wird aktualisiert')}</span></div>
+                <div class="mini">Status: ${escapeHtml(entry.statusLabel)} · Grund: ${escapeHtml(entry.reason || '—')}</div>
+                ${(entry.matches || []).length ? `<div class="mini">Match-Kandidaten: ${entry.matches.map(m => `${escapeHtml(m.project.title || 'Unbenannt')} (${escapeHtml(m.reasons.join(', '))})`).join(' · ')}</div>` : ''}
+                <div class="mini">Vorschau: ${entry.summary ? `Summary · ` : ''}${entry.currentFocus ? `Fokus · ` : ''}${entry.nextStep ? `Nächster Schritt · ` : ''}${entry.tags.length} Tags · ${entry.areas.length} Bereiche · ${entry.resources.length} Ressourcen${entry.notionUrl ? ' · Notion-URL erkannt' : ''}${entry.notes.length ? ` · ${entry.notes.length} Notizen additiv` : ''}${entry.proposedFeatures.length ? ` · ${entry.proposedFeatures.length} Projektbaustein-Kandidaten nicht übernommen` : ''}</div>
                 ${entry.warnings.length ? `<div class="mini" style="color:var(--warning);">${entry.warnings.map(escapeHtml).join('<br>')}</div>` : ''}
-              </div>
-            `).join('')}
+                <div class="stack-row" style="margin-top:8px;"><label class="mini">Review-Aktion <select data-bulk-review-action="${index}" ${entry.status === 'invalid' ? 'disabled' : ''}><option value="create-new" ${action === 'create-new' ? 'selected' : ''} ${entry.status === 'duplicate' ? 'disabled' : ''}>Importieren</option><option value="update-existing" ${action === 'update-existing' ? 'selected' : ''}>Bestehendes Projekt aktualisieren</option><option value="discard" ${action === 'discard' ? 'selected' : ''}>Verwerfen</option></select></label>${action === 'update-existing' ? `<label class="mini">Zielprojekt <select data-bulk-target-project="${index}">${targetOptions}</select></label>` : ''}</div>
+              </div>`;
+            }).join('')}
           </div>
         `;
       }
 
       function renderProjectBulkImportSection() {
         const state = getProjectBulkImportState();
+        const review = getProjectBulkImportReviewSummary(state.preview);
         return `
           <details class="item" style="margin-bottom:12px;" ${state.preview || state.error || state.summary ? 'open' : ''}>
             <summary style="font-weight:700;cursor:pointer;">Mehrere Projekte importieren (Notion/Claude JSON)</summary>
             <div class="mini" style="margin:8px 0 10px;">JSON-Vertrag: <code>${ATLAS_PROJECT_BULK_IMPORT_TYPE}</code>. Bitte vor produktiver Nutzung ein frisches JSON-/ZIP-Backup exportieren.</div>
             <div class="field"><label for="projectBulkImportRawJson">Projektlisten-JSON</label><textarea id="projectBulkImportRawJson" style="min-height:180px;font-family:var(--font-mono);font-size:12px;" placeholder='{"type":"${ATLAS_PROJECT_BULK_IMPORT_TYPE}","projects":[{"title":"...","notionUrl":"https://www.notion.so/..."}]}'>${escapeHtml(state.rawJson || '')}</textarea></div>
-            <div class="stack-row"><button class="btn btn-secondary" id="btnPreviewProjectBulkImport">Preview prüfen</button><button class="btn btn-primary" id="btnConfirmProjectBulkImport" ${state.preview && state.preview.counts && state.preview.counts.new ? '' : 'disabled'}>Nur eindeutige neue Projekte importieren</button><button class="btn" id="btnResetProjectBulkImport">Zurücksetzen</button></div>
+            <div class="stack-row"><button class="btn btn-secondary" id="btnPreviewProjectBulkImport">Preview prüfen</button><button class="btn btn-primary" id="btnConfirmProjectBulkImport" ${review.canApply ? '' : 'disabled'}>Gewählte Entscheidungen anwenden</button><button class="btn" id="btnResetProjectBulkImport">Zurücksetzen</button></div>
             ${state.error ? `<div class="notice notice-danger" style="margin-top:10px;">${escapeHtml(state.error)}</div>` : ''}
             ${state.summary ? `<div class="notice" style="margin-top:10px;">${escapeHtml(state.summary)}</div>` : ''}
             ${renderProjectBulkImportPreview(state.preview)}
+            ${state.preview ? `<div class="item" style="margin-top:10px;"><div class="stack-row"><button class="btn btn-secondary" id="btnBuildProjectBulkImportCleanupPrompt">Bereinigungs-Prompt erzeugen</button><button class="btn" id="btnCopyProjectBulkImportCleanupPrompt" ${state.cleanupPrompt ? '' : 'disabled'}>Prompt kopieren</button></div><textarea readonly style="margin-top:8px;min-height:160px;font-family:var(--font-mono);font-size:12px;">${escapeHtml(state.cleanupPrompt || '')}</textarea></div>` : ''}
           </details>
         `;
       }
@@ -6826,23 +6966,28 @@ ${workMeta.nextThought || '—'}`,
       function confirmProjectBulkImport() {
         const state = getProjectBulkImportState();
         if (!state.preview) return;
+        const review = getProjectBulkImportReviewSummary(state.preview);
+        if (!review.canApply) { state.error = 'Bitte unvollständige oder ungültige Review-Entscheidungen korrigieren.'; renderView(); return; }
+        const confirmText = `Gewählte Entscheidungen anwenden?\n\nNeu anzulegen: ${review.createNew}\nBestehende Projekte aktualisieren: ${review.updateExisting}\nVerwerfen: ${review.discard}\nBlockiert/ungültig: ${review.invalidBlocked}`;
+        if (review.updateExisting && !confirm(confirmText)) return;
         const now = new Date().toISOString();
-        const entries = (state.preview.entries || []).filter(entry => entry.status === 'new');
-        entries.forEach(entry => {
-          createProjectFromData({
-            title: entry.title,
-            summary: entry.summary,
-            status: entry.projectStatus,
-            currentFocus: entry.currentFocus,
-            nextStep: entry.nextStep,
-            tags: entry.tags,
-            areas: entry.areas,
-            sourceContext: entry.sourceContext,
-            externalId: entry.externalId,
-            resources: entry.resources.map(resource => Object.assign({}, resource, { id: uid('res'), createdAt: now, updatedAt: now }))
-          });
+        const result = { created: 0, updated: 0, unchangedUpdates: 0, discarded: 0, invalid: review.invalidBlocked, skippedFeatures: 0 };
+        (state.preview.entries || []).forEach(entry => {
+          if (entry.status === 'invalid' || entry.reviewAction === 'discard') { if (entry.status !== 'invalid') result.discarded += 1; return; }
+          if (entry.reviewAction === 'create-new' && entry.status === 'new') {
+            createProjectFromData({ title: entry.title, summary: entry.summary, status: entry.projectStatus, currentFocus: entry.currentFocus, nextStep: entry.nextStep, tags: entry.tags, areas: entry.areas, sourceContext: entry.sourceContext, externalId: entry.externalId, resources: entry.resources.map(resource => Object.assign({}, resource, { id: uid('res'), createdAt: now, updatedAt: now })) });
+            result.created += 1;
+            return;
+          }
+          if (entry.reviewAction === 'update-existing' && entry.status !== 'invalid') {
+            const existing = S.projects.find(project => project.id === entry.targetProjectId);
+            if (!existing) return;
+            const update = applyConservativeProjectBulkUpdate(existing, entry);
+            result.skippedFeatures += update.skippedFeatures.length;
+            if (update.changed) result.updated += 1; else result.unchangedUpdates += 1;
+          }
         });
-        state.summary = `${entries.length} neue Projekte importiert. Dubletten, Update-Kandidaten und ungültige Einträge wurden übersprungen.`;
+        state.summary = `${result.created} neue Projekte importiert. ${result.updated} bestehende Projekte konservativ aktualisiert. ${result.unchangedUpdates} Updates ohne neue Ergänzungen. ${result.discarded} Einträge verworfen. ${result.invalid} ungültige Einträge blockiert.${result.skippedFeatures ? ` ${result.skippedFeatures} Projektbaustein-Kandidaten wurden im Update-MVP nicht übernommen.` : ''}`;
         state.rawJson = '';
         state.preview = null;
         state.error = '';
